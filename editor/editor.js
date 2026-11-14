@@ -314,12 +314,20 @@ function linkedFrames(link, seconds) {
   return link.hold + JOINT * Math.max(1, Math.round(frames / JOINT));
 }
 
-// The part of a linked render the timeline shows. Held frames are already on screen in the source clip.
+// Mirrors HANDOVER in project.py. A linked clip and its source both show the held frames. The timeline cuts from
+// one file to the other this many frames inside them, clear of the frames a decoder draws badly at the ends of a
+// file and of the stretch where the held sound is softened.
+const HANDOVER = 9;
+const handoverOf = (link) => (link && link.handover) || 0;
+
+// The part of a linked render the timeline shows. Held frames are already on screen in the source clip, except
+// the last few, which a link with a handover plays itself.
 function linkedRange(link, frames) {
   if (!link) return [0, frames];
-  if (link.mode === "extend_after") return [link.hold, frames];
-  if (link.mode === "extend_before") return [0, frames - link.hold];
-  return [link.hold, frames - link.hold];
+  const over = handoverOf(link);
+  if (link.mode === "extend_after") return [link.hold - over, frames];
+  if (link.mode === "extend_before") return [0, frames - link.hold + over];
+  return [link.hold - over, frames - link.hold + over];
 }
 
 // A clip on the timeline shows a window of its take. Slipping slides the take under that window:
@@ -361,16 +369,23 @@ function sideOf(item) {
   return { clip: item.clip, item: item.id, file: take.file, subfolder: take.subfolder, first: item.in, last: item.out };
 }
 
-function linkSides(link) {
-  return link ? [link.a, link.b].filter(Boolean) : [];
+// Mirrors is_tail and side_cut in project.py. A side records the frames that are held: they end at its last, or
+// start at its first. The source is cut a handover inside them.
+const isTail = (link, key) => key === "a" && link.mode !== "extend_before";
+function sideCut(link, key) {
+  const side = link[key];
+  const over = handoverOf(link);
+  return isTail(link, key) ? ["out", side.last - over] : ["in", side.first + over];
 }
 
 // A linked clip was generated from specific frames. It no longer joins cleanly once those change.
-function sideChanged(side) {
+function sideChanged(link, key) {
+  const side = link[key];
   const item = state.project.timeline.find((i) => i.id === side.item);
   const take = activeTake(clipOf(side.clip));
   if (!item || !take) return false;
-  return take.file !== side.file || item.in !== side.first || item.out !== side.last;
+  const [which, frame] = sideCut(link, key);
+  return take.file !== side.file || item[which] !== frame;
 }
 
 // Only a join that still exists can show, so a clip that moved away from its source is left alone.
@@ -381,14 +396,8 @@ function touches(clip, side) {
 }
 
 function isStale(clip) {
-  return clip.takes.length > 0 && linkSides(clip.link).some((side) => sideChanged(side) && touches(clip, side));
-}
-
-function refreshLink(clip) {
-  for (const side of linkSides(clip.link)) {
-    const item = state.project.timeline.find((i) => i.id === side.item);
-    if (item && activeTake(clipOf(item.clip))) Object.assign(side, sideOf(item));
-  }
+  const link = clip.link;
+  return clip.takes.length > 0 && ["a", "b"].some((key) => link?.[key] && sideChanged(link, key) && touches(clip, link[key]));
 }
 
 function followingItem(item) {
@@ -441,17 +450,65 @@ function continuedTrack(source, item, mode, frames, out = item.out) {
   return { ...source.track, from: Math.round(Math.max(0, from) * 1e6) / 1e6 };
 }
 
+// Mirrors snap_out and snap_in in holds.py. H3's picture latent repeats every 17 frames, and a take can hold
+// another take's frames as the latents they were sampled in only when they start on that grid.
+const CYCLE = 17;
+function snapOut(out, hold, least) {
+  const snapped = hold + Math.floor((out - hold) / CYCLE) * CYCLE;
+  return snapped - hold >= Math.max(0, least) ? snapped : out;
+}
+function snapIn(start, hold, most) {
+  const snapped = Math.ceil(start / CYCLE) * CYCLE;
+  return snapped + hold <= most ? snapped : start;
+}
+
+// Where the frames a new linked clip holds end, or start, for it to hold latents: the end it carries on from moves
+// back and the start it arrives at moves forward, by 16 frames at most. Imported footage has no latents and keeps
+// its cuts. joinSide does the same and moves the cuts; this only looks.
+function snappedCuts(item, mode, next) {
+  const generated = (one) => clipOf(one.clip).kind !== "footage";
+  const cuts = { in: item.in, out: item.out, nextIn: next ? next.in : null };
+  if ((mode === "extend_after" || mode === "bridge") && generated(item)) cuts.out = snapOut(item.out, HOLD, item.in);
+  if (mode === "extend_before" && generated(item)) cuts.in = snapIn(item.in, HOLD, item.out);
+  if (mode === "bridge" && next && generated(next)) cuts.nextIn = snapIn(next.in, HOLD, next.out);
+  return cuts;
+}
+
+// Trim an item to a new in or out and close up what follows it.
+function moveCut(item, key, frame) {
+  if (frame === item[key]) return;
+  const end = itemEnd(item);
+  item[key] = frame;
+  shiftFrom(end, itemEnd(item) - end, item);
+}
+
+// Mirrors join_side in project.py: join one side of a link to its source where the source is cut now. The held
+// frames end at that cut, or start at it, moved onto the latent's grid unless snap is off. The source is then cut
+// a handover inside them, and the linked clip plays the rest of them itself.
+function joinSide(link, key, item, snap = true) {
+  const tail = isTail(link, key);
+  const snaps = snap && clipOf(item.clip).kind !== "footage";
+  const side = sideOf(item);
+  if (tail) side.last = snaps ? snapOut(item.out, HOLD, item.in) : item.out;
+  else side.first = snaps ? snapIn(item.in, HOLD, item.out) : item.in;
+  link[key] = side;
+  moveCut(item, ...sideCut(link, key));
+  return side;
+}
+
 function addLinked(mode) {
   const item = selectedRendered();
   if (!item) return;
   const source = clipOf(item.clip);
   const next = followingItem(item);
   const seconds = 4.25;
-  const link = { mode, hold: HOLD, a: sideOf(item) };
-  if (mode === "bridge") link.b = sideOf(next);
-  const track = continuedTrack(source, item, mode, linkedFrames(link, seconds));
+  const cuts = snappedCuts(item, mode, mode === "bridge" ? next : null);
+  const track = continuedTrack(source, { ...item, in: cuts.in }, mode, linkedFrames({ mode, hold: HOLD }, seconds), cuts.out);
   if (track === false) return;
   checkpoint();
+  const link = { mode, hold: HOLD, handover: HANDOVER };
+  joinSide(link, "a", item);
+  if (mode === "bridge") joinSide(link, "b", next);
   const titles = { extend_after: "After ", extend_before: "Before ", bridge: "Bridge from " };
   const clip = {
     id: uid("c"), name: titles[mode] + source.name, action: "", camera: "", speaker: "", dialogue: "",
@@ -1161,11 +1218,15 @@ function mergeWithNext() {
   next.in += rest;
   next.start += rest;
   const source = clipOf(item.clip);
+  // A merge keeps the scene's length, so its cuts stay where they are and are not moved onto the latent's grid.
+  const link = { mode: "bridge", hold: HOLD, handover: HANDOVER };
+  joinSide(link, "a", item, false);
+  joinSide(link, "b", next, false);
   const clip = {
     id: uid("c"), name: "Merge from " + source.name,
     action: "One continuous shot that moves naturally from the opening frames into the closing frames.",
     camera: "", speaker: "", dialogue: "", sound: "", music: "", seconds: 2.625, takes: [], active: null,
-    link: { mode: "bridge", hold: HOLD, a: sideOf(item), b: sideOf(next) },
+    link,
   };
   if (source.cast?.length) clip.cast = [...source.cast];
   if (binOf(source.bin)) clip.bin = source.bin;
@@ -1173,6 +1234,9 @@ function mergeWithNext() {
   state.project.clips.push(clip);
   const [first, last] = linkedRange(clip.link, linkedFrames(clip.link, clip.seconds));
   const placed = { id: uid("i"), clip: clip.id, start: itemEnd(item), in: first, out: last };
+  // The handovers trimmed the two clips a little more, and the new clip is that much longer: the next one still
+  // ends where it did.
+  shiftFrom(next.start, placed.start + last - first - next.start);
   state.project.timeline.push(placed);
   state.clip = clip.id;
   state.person = null;
@@ -2388,8 +2452,14 @@ function strengthSlider(key, label, value, [min, max], usual, onChange) {
 
 // When a LoRA joins a render, drawn as the render itself: the bar runs from its first step on the
 // left to its last on the right, and the lit part is where the LoRA works. The number is the start
-// as the file stores it: 1 joins at once, lower joins later. Three chips set the usual starts.
-const LORA_STARTS = [[1, "At once"], [0.75, "After framing"], [0.4, "Details only"]];
+// as the file stores it, a sigma: 1 joins at once, lower joins later. Three chips set the usual starts.
+const LORA_STARTS = [[1, "At once"], [0.93, "After framing"], [0.7, "Details only"]];
+
+// Renders sample with a video shift of 12, which keeps sigma high for most of the render: 0.93 is
+// about halfway, 0.75 already four fifths in. The bar shows how far into the render a start is.
+const VIDEO_SHIFT = 12;
+const sigmaToProgress = (s) => 1 - s / (VIDEO_SHIFT - (VIDEO_SHIFT - 1) * s);
+const progressToSigma = (p) => (VIDEO_SHIFT * (1 - p)) / (1 + (VIDEO_SHIFT - 1) * (1 - p));
 
 function startControl(id, name, value, onChange) {
   const box = document.createElement("div");
@@ -2404,7 +2474,7 @@ function startControl(id, name, value, onChange) {
   range.type = "range";
   range.min = 0;
   range.max = 1;
-  range.step = 0.05;
+  range.step = 0.01;
   range.dataset.key = "LoRA " + id + " start";
   range.setAttribute("aria-label", name + " joins the render this far in");
   range.title = "Drag right to let the model set the framing before the LoRA joins. Double-click for at once";
@@ -2442,14 +2512,14 @@ function startControl(id, name, value, onChange) {
   });
   // The range runs the other way from the number: left is the start of the render, where 1 joins.
   const show = (v, from) => {
-    if (from !== range) range.value = String(1 - v);
+    if (from !== range) range.value = String(sigmaToProgress(v));
     if (from !== amount) amount.value = v.toFixed(2);
-    range.style.setProperty("--from", String(1 - v));
+    range.style.setProperty("--from", String(sigmaToProgress(v)));
     range.style.setProperty("--to", "1");
     for (const [start, chip] of buttons) chip.setAttribute("aria-pressed", String(Math.abs(start - v) < 0.001));
     say.textContent = v >= 1 ? "Works on every step, from the first."
-      : v >= 0.6 ? "The model sets the framing and pose alone, then the LoRA joins."
-        : v > 0.05 ? "Joins only for the last steps: fine detail and texture."
+      : v >= 0.88 ? "The model sets the framing and pose alone, then the LoRA joins."
+        : v >= 0.55 ? "Joins only for the last steps: a light touch on fine detail."
           : "Joins at the very end, so it does almost nothing.";
   };
   const set = (raw, from) => {
@@ -2459,7 +2529,7 @@ function startControl(id, name, value, onChange) {
     save();
   };
   show(value, null);
-  range.addEventListener("input", () => set(1 - Number(range.value), range));
+  range.addEventListener("input", () => set(progressToSigma(Number(range.value)), range));
   range.addEventListener("dblclick", () => set(1, null));
   amount.addEventListener("input", () => { if (amount.value !== "" && amount.validity.valid) set(amount.value, amount); });
   amount.addEventListener("change", () => set(amount.value, null));

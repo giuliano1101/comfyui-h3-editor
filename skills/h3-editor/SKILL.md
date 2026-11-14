@@ -210,11 +210,14 @@ frames and their sound, so the join does not show. The source item must be rende
 | `bridge` | Two rendered shots should connect through new footage. It is placed between them and pushes the later one along |
 | `merge` | Two side-by-side shots should become one continuous move. It replaces their join and keeps the length of the scene |
 
-A take keeps its first and last 39 frames as sampled, so a linked clip holds them with no
-loss. That only works when the source item is not trimmed at the side being held, and when
-the source was rendered at the same quality as the linked clip. Otherwise the frames are
-read from the video, which darkens and softens the join slightly: avoid trimming the end of
-a clip you are about to extend. Even so, a long single shot drifts. Past about 30 seconds
+A take keeps its latents as sampled, picture and sound, so a linked clip holds them with
+no loss. They can be held from any cut on a multiple of 17 frames, so extending or bridging
+a trimmed clip moves that cut by up to 16 frames to reach one: read the new `in` and `out`
+from the summary. It only works when the source was rendered at the same quality as the
+linked clip, and a merge or imported footage is always read from the video, which darkens
+and softens the join slightly. The timeline also cuts 9 frames inside the held frames, so
+a source item ends 9 frames before the frames it lent and the linked item starts at 30.
+Even so, a long single shot drifts. Past about 30 seconds
 the room starts to change, and the model sometimes cuts to another framing on the first new
 frame. Check every join with `cuts`, and render a low-scoring extension again with another seed.
 

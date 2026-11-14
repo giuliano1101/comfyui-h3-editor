@@ -18,6 +18,50 @@ Each release is a tag on GitHub, `v` followed by the version.
   `save_cast_to_catalog`, `add_cast_from_catalog` and
   `update_cast_from_catalog`.
 
+- **Joins hold a take's own latents from any cut, with its sound.** A take
+  now saves all of its latents, picture and sound, in its `.hold.safetensors`
+  file (about 1.6 MB for a 5 second draft), where it used to save the first
+  and last 39 frames of the picture. A clip that extends or bridges it holds
+  them as they are from any cut on a multiple of 17 frames, the grid of H3's
+  picture latent, and not only from the take's two ends. The held sound comes
+  from the latents too when the cut is also on a multiple of 3 frames, as the
+  end of every extension is; otherwise it is encoded from the file as before.
+  Measured on a chain of three extensions, one of them from a trimmed clip:
+  the held picture is the source's latents exactly at all three joins, and the
+  held sound is at the join where the grids meet. Takes rendered before this
+  keep their old file and are held from their two ends as before.
+- **Joins cut where the two clips match.** A clip that extends or bridges
+  another holds 39 of its frames, so both files show them. The timeline used
+  to cut from one file to the other at the edge of those frames. That is the
+  worst place for it: a video decoder draws the last frames of a file with
+  nothing after them and the first with nothing before them, so they never
+  quite match the same frames in the other file, and the held sound is
+  softened over a fifth of a second next to the new material, so the two waves
+  have drifted apart by then. New extensions, bridges and merges cut 9 frames
+  inside the held frames: the source stops 9 frames earlier and the new clip
+  plays those 9 itself, so the scene is as long as before. Measured on 16
+  joins, the picture at a file's end was 1.5 dB under the rest on its last
+  frame (5 dB at worst) and level from the fourth; at a file's start it was 6
+  to 9 dB under on the first frame and level from the eighth. On a test chain
+  the step in the sound at the cut fell from 7 to 22 times the steps around
+  it to under 3. Joins made before keep their cut. Render a linked
+  clip again after trimming its source and it is joined at the new cut.
+- **A measure for joins.** `python joins.py PROJECT_FOLDER` compares the two
+  copies of the frames every join holds, the source's and the new take's:
+  whether the latents are the same, how alike the decoded pictures are frame
+  by frame, how much darker or softer the new take's copy is, and whether the
+  sound carries on or clicks at the cut. It reads the files and changes
+  nothing.
+
+### Changed
+
+- **Extending from a trimmed clip moves the cut onto the latent's grid.**
+  Extend forward, Extend back and Bridge move the end they carry on from back,
+  and the start they arrive at forward, by 16 frames at most (two thirds of a
+  second), so the new clip can hold the source's latents. The clips after it
+  close up. A whole clip is already on the grid and is not touched, and
+  imported footage keeps its cut. Merge still holds its frames from the video.
+
 ### Fixed
 
 - The side panel's tabs no longer make the panel scroll sideways at its usual

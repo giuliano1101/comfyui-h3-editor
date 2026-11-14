@@ -116,21 +116,167 @@ class LinkedTest(unittest.TestCase):
         project = scene(124, 124)
         clip, item = add_linked(project, store.ordered(project)[0]["id"], "extend_after")
         self.assertEqual(clip["link"]["a"]["file"], "t0.mp4")
-        self.assertEqual(starts(project), [(0, 124), (124, 226), (226, 350)])
+        # The source stops 9 frames early and the new clip plays those 9 itself: the scene is as long as before.
+        self.assertEqual(starts(project), [(0, 115), (115, 226), (226, 350)])
 
     def test_merge_keeps_the_scene_length(self):
         project = scene(124, 124)
         before = store.scene_end(project)
-        clip, _ = add_linked(project, store.ordered(project)[0]["id"], "merge")
+        clip, item = add_linked(project, store.ordered(project)[0]["id"], "merge")
         self.assertEqual(store.scene_end(project), before)
         self.assertEqual(clip["link"]["mode"], "bridge")
         self.assertEqual(clip["link"]["a"]["last"], 124 - 32)
+        self.assertEqual(clip["link"]["b"]["first"], 31)
+        first, middle, last = store.ordered(project)
+        self.assertEqual((item_end(first), item_end(middle)), (middle["start"], last["start"]))
+        self.assertEqual((first["out"], middle["in"], middle["out"], last["in"]), (83, 30, 111, 40))
 
     def test_joining_an_unrendered_clip_is_refused(self):
         project = new_project("Test")
         _, item = add_clip(project, {"action": "One."})
         with self.assertRaisesRegex(ValueError, "render Clip 1"):
             add_linked(project, item["id"], "extend_after")
+
+    def test_an_extension_plays_the_last_held_frames_itself(self):
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        clip, item = add_linked(project, first["id"], "extend_after")
+        # The held frames are the source's last 39. The source is cut 9 inside them, and the new clip starts there.
+        self.assertEqual(clip["link"]["handover"], 9)
+        self.assertEqual((clip["link"]["a"]["first"], clip["link"]["a"]["last"]), (0, 124))
+        self.assertEqual((first["in"], first["out"]), (0, 115))
+        self.assertEqual((item["in"], item["out"]), (30, 141))
+        self.assertEqual(item["start"], item_end(first))
+
+    def test_an_extension_before_plays_the_first_held_frames_itself(self):
+        project = scene(124, 124)
+        second = store.ordered(project)[1]
+        clip, item = add_linked(project, second["id"], "extend_before")
+        self.assertEqual(clip["link"]["a"]["first"], 0)
+        self.assertEqual((second["in"], second["out"]), (9, 124))
+        self.assertEqual((item["in"], item["out"]), (0, 141 - 39 + 9))
+        self.assertEqual(second["start"], item_end(item))
+        self.assertEqual(store.scene_end(project), 124 + 102 + 124)
+
+    def test_a_bridge_hands_over_at_both_ends(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        clip, item = add_linked(project, first["id"], "bridge")
+        self.assertEqual((first["out"], second["in"]), (115, 9))
+        self.assertEqual((item["in"], item["out"]), (30, 192 - 39 + 9))
+        self.assertEqual((item["start"], second["start"]), (item_end(first), item_end(item)))
+
+    def test_a_first_render_keeps_the_handover(self):
+        project = scene(124, 124)
+        clip, item = add_linked(project, store.ordered(project)[0]["id"], "extend_after", seconds=2)
+        accept_take(project, clip["id"], take("tx", 192))
+        self.assertEqual((item["in"], item["out"]), (30, 192))
+
+    def test_extending_a_trimmed_clip_moves_its_cut_onto_the_latent_grid(self):
+        # 100 is not a place the picture latent can be cut: the nearest one before it is 90 (39 + 17 * 3).
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        update_item(project, first["id"], {"out": 100}, ripple=True)
+        clip, item = add_linked(project, first["id"], "extend_after")
+        self.assertEqual((clip["link"]["a"]["first"], clip["link"]["a"]["last"]), (0, 90))
+        self.assertEqual(first["out"], 81)
+        self.assertEqual(item["start"], 81)
+        # What followed still touches the new clip.
+        self.assertEqual(store.ordered(project)[2]["start"], item_end(item))
+
+    def test_extending_before_a_trimmed_start_moves_it_onto_the_latent_grid(self):
+        project = scene(124, 124)
+        second = store.ordered(project)[1]
+        second["in"] = 20
+        clip, item = add_linked(project, second["id"], "extend_before")
+        self.assertEqual(clip["link"]["a"]["first"], 34)
+        self.assertEqual(second["in"], 43)
+        self.assertEqual(second["start"], item_end(item))
+
+    def test_a_bridge_moves_both_cuts_onto_the_latent_grid(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        first["out"], second["in"] = 110, 3
+        clip, _ = add_linked(project, first["id"], "bridge")
+        self.assertEqual((clip["link"]["a"]["last"], clip["link"]["b"]["first"]), (107, 17))
+        self.assertEqual((first["out"], second["in"]), (98, 26))
+
+    def test_footage_keeps_its_cut(self):
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        store.find_clip(project, first["clip"])["kind"] = "footage"
+        first["out"] = 100
+        clip, _ = add_linked(project, first["id"], "extend_after")
+        self.assertEqual(clip["link"]["a"]["last"], 100)
+        self.assertEqual(first["out"], 91)
+
+    def test_a_clip_too_short_to_give_frames_up_keeps_its_cut(self):
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        first["in"], first["out"] = 60, 100
+        clip, _ = add_linked(project, first["id"], "extend_after")
+        self.assertEqual(clip["link"]["a"]["last"], 100)
+
+    def test_a_linked_clip_continues_its_sources_track_from_the_held_frames(self):
+        project = scene(141, 124)
+        first = store.ordered(project)[0]
+        store.find_clip(project, first["clip"])["track"] = {"file": "voice.mp3", "subfolder": "s", "from": 2.0}
+        clip, _ = add_linked(project, first["id"], "extend_after")
+        # The new take's first frame is the source's frame 141 - 39, wherever the source is cut.
+        self.assertEqual(clip["track"]["from"], round(2.0 + (141 - 39) / 24.0, 6))
+
+
+class JoinTest(unittest.TestCase):
+    """A linked clip against its source, after both are rendered."""
+
+    def setUp(self):
+        self.project = scene(124, 124)
+        self.first = store.ordered(self.project)[0]
+        self.clip, self.item = add_linked(self.project, self.first["id"], "extend_after")
+        accept_take(self.project, self.clip["id"], take("tx", 141))
+
+    def test_a_fresh_join_is_whole(self):
+        self.assertFalse(store.is_stale(self.project, self.clip))
+
+    def test_trimming_the_source_breaks_the_join(self):
+        update_item(self.project, self.first["id"], {"out": 110}, ripple=True)
+        self.assertTrue(store.is_stale(self.project, self.clip))
+
+    def test_a_new_take_of_the_source_breaks_the_join(self):
+        accept_take(self.project, self.first["clip"], take("t9", 124))
+        self.assertTrue(store.is_stale(self.project, self.clip))
+
+    def test_trimming_the_sources_other_end_does_not(self):
+        self.first["in"] = 10
+        self.assertFalse(store.is_stale(self.project, self.clip))
+
+    def test_rendering_again_holds_the_same_frames_of_the_sources_new_take(self):
+        accept_take(self.project, self.first["clip"], take("t9", 124))
+        store.refresh_link(self.project, self.clip)
+        self.assertEqual((self.clip["link"]["a"]["file"], self.clip["link"]["a"]["last"]), ("t9.mp4", 124))
+        self.assertEqual(self.first["out"], 115)
+        self.assertFalse(store.is_stale(self.project, self.clip))
+
+    def test_rendering_again_after_a_trim_joins_at_the_new_cut(self):
+        update_item(self.project, self.first["id"], {"out": 110}, ripple=True)
+        store.refresh_link(self.project, self.clip)
+        # 110 moves back onto the grid at 107, and the source stops 9 frames inside the frames now held.
+        self.assertEqual(self.clip["link"]["a"]["last"], 107)
+        self.assertEqual(self.first["out"], 98)
+        self.assertEqual(self.item["start"], item_end(self.first))
+        self.assertFalse(store.is_stale(self.project, self.clip))
+
+    def test_a_join_made_before_handovers_is_read_as_it_was(self):
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        side = store.side_of(project, first)
+        link = {"mode": "extend_after", "hold": 39, "a": side}
+        self.assertEqual(store.linked_range(link, 141), (39, 141))
+        project["clips"].append({"id": "cx", "name": "Old", "takes": [take("to", 141)], "active": "to", "link": link})
+        project["timeline"].append({"id": "ix", "clip": "cx", "start": 124, "in": 39, "out": 141})
+        self.assertFalse(store.is_stale(project, project["clips"][-1]))
+        store.refresh_link(project, project["clips"][-1])
+        self.assertEqual((first["out"], link["a"]["last"]), (124, 124))
 
 
 class RenderRecordTest(unittest.TestCase):

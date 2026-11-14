@@ -16,6 +16,7 @@ from .twins import with_twins
 from . import hyperflow
 from . import clipproj
 from . import media
+from . import holds
 
 # Why a HyperFlow .gguf cannot load here (the gguf package, which this pack's requirements install),
 # or None. The INT8 safetensors files load either way.
@@ -101,7 +102,7 @@ class H3Take(io.ComfyNode):
                 io.Image.Input("source_video", optional=True, tooltip="24 fps frames to hold."),
                 io.Image.Input("end_video", optional=True, tooltip="With video_mode bridge, the clip the take must arrive at."),
                 io.Audio.Input("end_audio", optional=True, tooltip="Soundtrack of end_video."),
-                io.Latent.Input("source_hold", optional=True, tooltip="The held frames of source_video as the latent they were sampled in, from H3 Load Clip. Used in place of encoding the frames again, so a chain of extensions does not lose detail or brightness at each join."),
+                io.Latent.Input("source_hold", optional=True, tooltip="The held frames of source_video, and their sound, as the latents they were sampled in, from H3 Load Clip. Used in place of encoding them again, so a chain of extensions does not lose detail or brightness at each join."),
                 io.Latent.Input("end_hold", optional=True, tooltip="The same for end_video."),
                 io.Latent.Input("carry", optional=True, tooltip="A finished H3 latent. Its last hold_frames open this take, with no re-encode. Leave video_mode off."),
                 io.Int.Input("hold_frames", default=39, min=5, max=3600, step=1),
@@ -266,8 +267,9 @@ class H3Take(io.ComfyNode):
                     if tuple(video_latent.shape[3:]) != (height // 16, width // 16):
                         raise ValueError("carry is a different size from this take")
                 else:
-                    video_latent = held_latent(held, steps, height, width)
+                    video_latent = holds.held_picture(held, steps, height, width)
                     if video_latent is None:
+                        held = None       # the sound follows the picture: both from the latents, or both from the file
                         start = span["source_start"]
                         video_latent = encode_video(vae, frames[start:start + span["hold"]], width, height, steps)
                 video_curve = merge_curves(
@@ -278,7 +280,9 @@ class H3Take(io.ComfyNode):
                 if carry is not None and audio is None:
                     audio_latent = audio_tail
                 else:
-                    audio_latent = encode_audio(audio_vae, audio, window["source_second"], window["ticks"])
+                    audio_latent = holds.held_sound(held, window, latent["samples"].unbind()[1])
+                    if audio_latent is None:
+                        audio_latent = encode_audio(audio_vae, audio, window["source_second"], window["ticks"])
                 audio_curve = merge_curves(
                     audio_curve,
                     hold_curve(audio_ticks(length), audio_first, audio_latent.shape[-1], feather=audio_feather),
@@ -288,44 +292,6 @@ class H3Take(io.ComfyNode):
             latent = write_holds(latent, video_latent, video_first, audio_latent, audio_first,
                                  video_curve, audio_curve, region)
         return latent
-
-
-def held_latent(held, steps, height, width):
-    """The picture latent of a hold, if one was saved for exactly these frames at this size. None means encode the frames."""
-    if not isinstance(held, dict) or held.get("samples") is None:
-        return None
-    video = held["samples"]
-    if getattr(video, "is_nested", False):
-        video = video.tensors[0]
-    if video.dim() != 5 or video.shape[2] != steps or tuple(video.shape[3:]) != (height // 16, width // 16):
-        return None
-    return video.float()
-
-
-def hold_file(file):
-    """Where a take keeps its hold latents: beside its video, named after the same take."""
-    stem = os.path.splitext(file)[0]
-    head, _, counter = stem.rstrip("_").rpartition("_")
-    return (head if counter.isdigit() and head else stem) + ".hold.safetensors"
-
-
-def saved_hold(path, first, stop, total):
-    """The saved latent for frames first..stop of a take, or None when there is none for exactly that part."""
-    count = stop - first
-    if not os.path.exists(path) or count < 5 or (count - 5) % 17:
-        return None
-    try:
-        import safetensors.torch
-
-        saved = safetensors.torch.load_file(path)
-    except Exception:  # an unreadable file: the frames are encoded as before
-        return None
-    steps = video_steps(count)
-    if stop == total and "tail" in saved and saved["tail"].shape[2] >= steps:
-        return {"samples": saved["tail"][:, :, -steps:].float()}
-    if first == 0 and "head" in saved and saved["head"].shape[2] >= steps:
-        return {"samples": saved["head"][:, :, :steps].float()}
-    return None
 
 
 def output_file(file):
@@ -406,7 +372,7 @@ class H3LoadClip(io.ComfyNode):
                 io.Int.Input("last", default=0, min=0, max=100000, tooltip="Stops before this frame. 0 reads to the end."),
             ],
             outputs=[io.Image.Output(display_name="frames"), io.Audio.Output(display_name="audio"),
-                     io.Latent.Output(display_name="hold", tooltip="These frames as the latent they were sampled in, when the clip saved one and they are its first or last frames. Connect it to H3 Take's source_hold or end_hold.")],
+                     io.Latent.Output(display_name="hold", tooltip="These frames as the latents they were sampled in, when the clip saved them and the frames start on a multiple of 17. Their sound comes along when they also start on a multiple of 3 frames. Connect it to H3 Take's source_hold or end_hold.")],
         )
 
     @classmethod
@@ -421,14 +387,11 @@ class H3LoadClip(io.ComfyNode):
             rate_first = int(first / float(FPS) * rate)
             rate_stop = int(stop / float(FPS) * rate)
             audio = {"waveform": audio["waveform"][..., rate_first:rate_stop], "sample_rate": rate}
-        return io.NodeOutput(frames[first:stop], audio, saved_hold(hold_file(path), first, stop, frames.shape[0]))
-
-
-HOLD_STEPS = 12   # 39 frames, the hold the editor's extensions and bridges use
+        return io.NodeOutput(frames[first:stop], audio, holds.part(holds.hold_path(path), first, stop, frames.shape[0]))
 
 
 class H3SaveHold(io.ComfyNode):
-    """Keeps the first and last frames of a sampled take as latents, for the clips that will extend it."""
+    """Keeps a sampled take's latents, picture and sound, for the clips that will extend or bridge it."""
 
     @classmethod
     def define_schema(cls):
@@ -436,7 +399,7 @@ class H3SaveHold(io.ComfyNode):
             node_id="H3SaveHold",
             display_name="H3 Save Hold",
             category="minimax/h3",
-            description="Save the first and last 39 frames of a sampled H3 take as latents, beside its video. A later take that extends or bridges this one holds them as they are, with no decode and encode in between.",
+            description="Save a sampled H3 take's latents, picture and sound, beside its video. A later take that extends or bridges this one holds them as they are, with no decode and encode in between, from any cut on a multiple of 17 frames.",
             inputs=[
                 io.Latent.Input("latent", tooltip="The sampled take, before it is decoded."),
                 io.String.Input("file", tooltip="Path inside the output folder. Name it after the take's video."),
@@ -447,19 +410,11 @@ class H3SaveHold(io.ComfyNode):
 
     @classmethod
     def execute(cls, latent, file) -> io.NodeOutput:
-        import safetensors.torch
-
         base = os.path.realpath(folder_paths.get_output_directory())
         path = os.path.realpath(os.path.join(base, file))
         if not path.startswith(base + os.sep) or not path.endswith(".safetensors"):
             raise ValueError("%s is not a .safetensors path inside the output folder" % file)
-        video = latent["samples"]
-        if getattr(video, "is_nested", False):
-            video = video.tensors[0]
-        steps = min(HOLD_STEPS, video.shape[2])
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        safetensors.torch.save_file({"head": video[:, :, :steps].detach().cpu().half().contiguous(),
-                                     "tail": video[:, :, -steps:].detach().cpu().half().contiguous()}, path)
+        holds.save(path, latent["samples"])
         return io.NodeOutput()
 
 

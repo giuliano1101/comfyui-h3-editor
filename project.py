@@ -12,8 +12,10 @@ import time
 import uuid
 
 try:
+    from . import holds
     from .prompting import compose_prompt, compose_reference_prompt
 except ImportError:
+    import holds
     from prompting import compose_prompt, compose_reference_prompt
 
 FPS = 24
@@ -847,7 +849,7 @@ def render_graph(project, folder, clip, take, quality, seed, available=None):
         "19": {"class_type": "SaveVideo", "inputs": {
             "video": ["18", 0], "filename_prefix": "%s/%s/clips/%s_%s" % (ROOT, folder, clip["id"], take),
             "format": "auto", "codec": "auto"}},
-        # The take's first and last frames as sampled, for the clips that will extend or bridge it.
+        # The take's latents as sampled, picture and sound, for the clips that will extend or bridge it.
         "20": {"class_type": "H3SaveHold", "inputs": {
             "latent": ["15", 0], "file": "%s/%s/clips/%s_%s.hold.safetensors" % (ROOT, folder, clip["id"], take)}},
     }
@@ -1542,6 +1544,15 @@ def effects_waiting(project):
 # Editing operations. The editor, the HTTP API and agents share these, so the rules live in one place.
 
 HOLD = 39
+# A linked clip holds HOLD frames of its source, and both files then show them. The timeline cuts from one file to
+# the other this many frames inside them, not at their edge. A decoder draws the last frames of a file with nothing
+# after them and the first with nothing before them, so a file's last 3 frames and its first 7 never quite match the
+# same frames decoded in the middle of the other file (measured on 16 joins at a file's end: 1.5 dB under the rest
+# on the last frame, 5 dB at worst, level again from the fourth; at a file's start 6 to 9 dB on the first frame and
+# level from the eighth). The held sound is also softened over the 8 steps, 5 frames, next to the new material, so
+# at the edge of the hold the two waves have drifted apart and the cut can click. 9 frames is clear of all three,
+# and is 15 whole steps of the sound.
+HANDOVER = 9
 MERGE_FRAMES = 63
 CLIP_FIELDS = ("name", "action", "camera", "speaker", "dialogue", "sound", "music", "seconds", "cast", "seed",
                "first", "last", "language", "track", "bin", "profile", "loras")
@@ -1635,16 +1646,25 @@ def shift_from(project, frame, by, skip=None):
             other["start"] += by
 
 
+def link_handover(link):
+    """How many of the held frames a linked clip plays itself, at each side it joins. See HANDOVER."""
+    return int((link or {}).get("handover") or 0)
+
+
 def linked_range(link, frames):
-    """The part of a linked render the timeline shows. Held frames are already on screen in the source."""
+    """The part of a linked render the timeline shows.
+
+    Held frames are already on screen in the source, so the clip starts after them, or ends before them. A link
+    with a handover plays the last few of them itself, and its source stops that much earlier.
+    """
     if not link:
         return 0, frames
-    hold = int(link["hold"])
+    hold, over = int(link["hold"]), link_handover(link)
     if link["mode"] == "extend_after":
-        return hold, frames
+        return hold - over, frames
     if link["mode"] == "extend_before":
-        return 0, frames - hold
-    return hold, frames - hold
+        return 0, frames - hold + over
+    return hold - over, frames - hold + over
 
 
 def planned_frames(clip):
@@ -1728,19 +1748,24 @@ def clean_track(value):
     return asset
 
 
-def continued_track(source, item, mode, frames):
-    """The slice of the source's track a linked clip holds, so one long performance carries on across clips."""
+def continued_track(source, item, mode, frames, side=None):
+    """The slice of the source's track a linked clip holds, so one long performance carries on across clips.
+
+    side is the link's side for the source: the held frames are counted from it, not from where the item is cut,
+    which a handover puts a few frames inside them.
+    """
     track = source.get("track")
     if not track:
         return None
     if clean_speed(item.get("speed")) != 1:
         raise ValueError("set %s to 100%% speed to continue its track" % source["name"])
+    first, last = (side["first"], side["last"]) if side else (item["in"], item["out"])
     if mode == "extend_before":
-        start = track["from"] + (item["in"] - (frames - HOLD)) / float(FPS)
+        start = track["from"] + (first - (frames - HOLD)) / float(FPS)
         if start < -1e-6:
             raise ValueError("the track starts %.2f s too late for this extension. Use fewer seconds" % -start)
     else:
-        start = track["from"] + (item["out"] - HOLD) / float(FPS)
+        start = track["from"] + (last - HOLD) / float(FPS)
     return dict(track, **{"from": round(max(0.0, start), 6)})
 
 
@@ -1972,17 +1997,32 @@ def side_of(project, item):
             "first": item["in"], "last": item["out"]}
 
 
-def link_sides(link):
-    return [s for s in ((link or {}).get("a"), (link or {}).get("b")) if s]
+def is_tail(link, key):
+    """Does this side of a link hold the end of its source. Otherwise it holds the start."""
+    return key == "a" and link["mode"] != "extend_before"
 
 
-def side_changed(project, side):
+def side_cut(link, key):
+    """The cut of its source a side joins, "out" or "in", and the frame that cut sits at while the join is whole.
+
+    A side records the frames that are held: they end at its last, or start at its first. The source is cut a
+    handover inside them, and the linked clip plays the rest of them itself.
+    """
+    side, over = link[key], link_handover(link)
+    if is_tail(link, key):
+        return "out", side["last"] - over
+    return "in", side["first"] + over
+
+
+def side_changed(project, link, key):
+    side = link[key]
     item = next((i for i in project.get("timeline", []) if i["id"] == side["item"]), None)
     clip = next((c for c in project.get("clips", []) if c["id"] == side["clip"]), None)
     take = active_take(clip) if clip else None
     if not item or not take:
         return False
-    return take["file"] != side["file"] or item["in"] != side["first"] or item["out"] != side["last"]
+    which, frame = side_cut(link, key)
+    return take["file"] != side["file"] or item[which] != frame
 
 
 def touches(project, clip, side):
@@ -1995,16 +2035,65 @@ def touches(project, clip, side):
 
 
 def is_stale(project, clip):
-    return bool(clip.get("takes")) and any(side_changed(project, s) and touches(project, clip, s) for s in link_sides(clip.get("link")))
+    link = clip.get("link")
+    return bool(clip.get("takes")) and any(side_changed(project, link, key) and touches(project, clip, link[key])
+                                           for key in ("a", "b") if (link or {}).get(key))
 
 
 def refresh_link(project, clip):
-    """A linked clip always renders from what its sources show on the timeline right now."""
-    for side in link_sides(clip.get("link")):
-        item = next((i for i in project.get("timeline", []) if i["id"] == side["item"]), None)
+    """A linked clip always renders from what its sources show on the timeline right now.
+
+    A source still cut where the link left it is held from the same frames, of the take it shows now. One that was
+    trimmed since is joined again at its new cut, as a new linked clip would be.
+    """
+    link = clip.get("link")
+    for key in ("a", "b"):
+        side = (link or {}).get(key)
+        item = next((i for i in project.get("timeline", []) if side and i["id"] == side["item"]), None)
         source = next((c for c in project.get("clips", []) if item and c["id"] == item["clip"]), None)
-        if item and source and active_take(source):
-            side.update(side_of(project, item))
+        take = active_take(source) if source else None
+        if not take:
+            continue
+        which, frame = side_cut(link, key)
+        if item[which] == frame:
+            side.update({"file": take["file"], "subfolder": take.get("subfolder")})
+        else:
+            join_side(project, link, key, item)
+
+
+def join_side(project, link, key, item, snap=True):
+    """Join one side of a link to its source where the source is cut now. Sets the side, and returns it.
+
+    The frames the linked clip will hold end at the source's cut, or start at it. Two things then move that cut:
+
+    The grid. A take can hold another take's frames as the latents they were sampled in only when they start on a
+    multiple of 17 frames (see holds.py). A clip trimmed anywhere else would be held from its video, through the
+    decoder and the encoder again. So the end a clip is extended from moves back, and the start a clip is arrived
+    at or extended before moves forward, by 16 frames at most. Imported footage has no latents and is left alone,
+    and so is a clip too short to give the frames up, or a merge, which has to keep the scene's length.
+
+    The handover. The source then stops a few frames inside the held frames, and the linked clip plays the rest of
+    them itself (see HANDOVER). Both files show the same picture there, so nothing is seen twice.
+
+    What follows on the timeline closes up.
+    """
+    tail, over = is_tail(link, key), link_handover(link)
+    snap = snap and find_clip(project, item["clip"]).get("kind") != "footage"
+    side = side_of(project, item)
+    if tail:
+        side["last"] = holds.snap_out(item["out"], HOLD, item["in"]) if snap else item["out"]
+        which, cut = "out", side["last"] - over
+    else:
+        side["first"] = holds.snap_in(item["in"], HOLD, item["out"]) if snap else item["in"]
+        which, cut = "in", side["first"] + over
+    if (cut <= item["in"]) if tail else (cut >= item["out"]):
+        raise ValueError("%s is too short on the timeline to carry on from" % find_clip(project, item["clip"])["name"])
+    if cut != item[which]:
+        end = item_end(item)
+        item[which] = cut
+        shift_from(project, end, item_end(item) - end, skip=item)
+    link[key] = side
+    return side
 
 
 def add_linked(project, item_id, mode, seconds=None, action=""):
@@ -2013,7 +2102,7 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
         raise ValueError("mode must be one of %s" % ", ".join(LINK_MODES))
     item = find_item(project, item_id)
     source = find_clip(project, item["clip"])
-    side = side_of(project, item)
+    side_of(project, item)        # refuses a source that is not rendered
     if item_length(item) < HOLD:
         raise ValueError("the clip needs at least %s frames on the timeline" % HOLD)
     nxt = following_item(project, item) if mode in ("bridge", "merge") else None
@@ -2034,12 +2123,12 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
         item["out"] -= away
         nxt["in"] += rest
         nxt["start"] += rest
-        side = side_of(project, item)
         seconds = 2.625
 
-    link = {"mode": "bridge" if mode == "merge" else mode, "hold": HOLD, "a": side}
+    link = {"mode": "bridge" if mode == "merge" else mode, "hold": HOLD, "handover": HANDOVER}
+    join_side(project, link, "a", item, snap=mode != "merge")
     if nxt:
-        link["b"] = side_of(project, nxt)
+        join_side(project, link, "b", nxt, snap=mode != "merge")
     seconds = float(seconds if seconds is not None else 4.25)
     if not math.isfinite(seconds) or not 0.5 <= seconds <= 60:
         raise ValueError("seconds must be between 0.5 and 60")
@@ -2051,7 +2140,7 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
         clip["cast"] = list(source["cast"])
     if source.get("bin"):
         clip["bin"] = source["bin"]
-    track = continued_track(source, item, link["mode"], linked_length(link, seconds))
+    track = continued_track(source, item, link["mode"], linked_length(link, seconds), link["a"])
     if track:
         clip["track"] = track
     project["clips"].append(clip)
@@ -2063,7 +2152,9 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
         shift_from(project, item["start"], length)
     elif mode == "extend_after":
         shift_from(project, start, length)
-    elif mode == "bridge":
+    else:
+        # A merge trimmed the two clips to keep the scene's length. Its handovers trim them a little more, and the
+        # new clip is that much longer, so the next clip still ends where it did.
         shift_from(project, nxt["start"], start + length - nxt["start"])
     placed = {"id": new_id("i"), "clip": clip["id"], "start": start, "in": first, "out": last}
     project["timeline"].append(placed)

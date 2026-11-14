@@ -196,18 +196,30 @@ needs a render.
 - The source item must be rendered, with at least 39 frames on the timeline.
 - `bridge` and `merge` join the item to the next one on the timeline, which must be rendered too.
 - `merge` also needs the two items side by side at 100% speed, the first with at least
-  71 frames and the second with at least 70. It trims 32 frames from the end of the
-  first and 31 from the start of the second, and fills that 63-frame span with the new clip.
-- A linked clip holds 39 real frames from each side it joins. The timeline shows only
-  the new frames, so the hold is never seen twice.
+  71 frames and the second with at least 70. It replaces the last 32 frames of the
+  first and the first 31 of the second with 63 new ones, so the scene keeps its length.
+- A linked clip holds 39 real frames from each side it joins, and both files then show
+  them. The timeline cuts from one to the other 9 frames inside them, where the two
+  match best: the source item's `out` moves back 9 frames (or its `in` forward, at the
+  side a clip arrives at), and the linked item plays those 9 itself, from `in` 30. The
+  scene is as long as it would be with the cut at the edge, and nothing is seen twice.
+  The link records this as `handover: 9`. Links made before have none and cut at the edge.
+- `extend_after`, `extend_before` and `bridge` hold those frames as the latents the
+  source was sampled in, which needs them to start on a multiple of 17 frames. A whole
+  clip already does. On a trimmed one, the `out` it carries on from moves back, and the
+  `in` it arrives at moves forward, by 16 frames at most, and the items after it close
+  up. Read the new `in` and `out` from the summary. Footage keeps its cut, and `merge`
+  holds its frames from the video.
 - A first or last frame on a held side is ignored, because that side already has real
   frames.
 - A linked clip keeps its source clip's `cast`.
 - When the source clip holds a `track`, the linked clip holds the next slice of it.
   For `extend_after`, `bridge` and `merge` that is
-  `from = source from + (source item out - 39) / 24`. For `extend_before` it is
-  `from = source from + (source item in - (new length - 39)) / 24`, which is refused if
-  it would fall before the start of the sound. The source item must be at 100% speed.
+  `from = source from + (end of the held frames - 39) / 24`. For `extend_before` it is
+  `from = source from + (start of the held frames - (new length - 39)) / 24`, which is
+  refused if it would fall before the start of the sound. The held frames end 9 frames
+  after the source item's `out`, and start 9 before its `in`. The source item must be
+  at 100% speed.
   A bridge lays the same track under the frames it holds from the next clip, so that
   clip should continue the track at that point.
 
@@ -465,9 +477,10 @@ Everything runs at 24 frames per second. H3 renders set lengths, so `seconds` sn
 - an ordinary clip renders 5 + 17k frames, the nearest to `seconds` x 24. That is
   steps of about 0.7 s, and 22 frames at the least;
 - `extend_after` and `extend_before` render 39 + 51k frames and show the 51k new
-  ones, in steps of about 2.1 s;
-- `bridge` renders 39 + 51k frames with k of 2 or more, and shows all but the 39 held
-  at each end. A merge is the shortest bridge: 141 frames, 63 of them shown.
+  ones and the 9 held frames beside them, in steps of about 2.1 s;
+- `bridge` renders 39 + 51k frames with k of 2 or more, and shows all but 30 of the
+  39 held at each end. A merge is the shortest bridge: 141 frames, 81 of them shown,
+  63 of them new.
 
 The timeline reserves that length before the render, so a finished take lands where the
 timeline expects it.
