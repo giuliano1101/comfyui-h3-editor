@@ -19,5 +19,6 @@ Repository = "https://github.com/igorls/comfyui-h3-editor"
 [tool.comfy]
 PublisherId = "igorls"
 DisplayName = "H3 Editor"
-Icon = ""
+Icon = "https://igorls.github.io/comfyui-h3-editor/images/icon.png"
+Banner = "https://igorls.github.io/comfyui-h3-editor/images/banner.jpg"
 requires-comfyui = ">=0.43.0"
