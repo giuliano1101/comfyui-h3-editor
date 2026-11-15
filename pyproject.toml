@@ -1,16 +1,23 @@
 [project]
-name = "comfyui-h3-editor"
+name = "h3-editor"
 description = "A timeline video editor for MiniMax H3 inside ComfyUI: write shots, render them, and cut them together with sound. With H3 Take, a node for one shot with pinned frames, references and held video or sound."
 version = "0.9.0"
 license = { file = "LICENSE" }
+requires-python = ">=3.10"
 dependencies = ["imageio-ffmpeg>=0.5", "gguf>=0.13.0"]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
 
 [project.urls]
 Homepage = "https://igorls.github.io/comfyui-h3-editor/"
+Documentation = "https://igorls.github.io/comfyui-h3-editor/"
 Repository = "https://github.com/igorls/comfyui-h3-editor"
+"Bug Tracker" = "https://github.com/igorls/comfyui-h3-editor/issues"
 
 [tool.comfy]
-# Set to the publisher made on registry.comfy.org before publishing.
-PublisherId = ""
+PublisherId = "igorls"
 DisplayName = "H3 Editor"
 Icon = ""
+requires-comfyui = ">=0.43.0"

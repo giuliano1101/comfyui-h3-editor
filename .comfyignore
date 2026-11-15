@@ -1,0 +1,5 @@
+# Left out of the archive published to the Comfy Registry. Same syntax as .gitignore.
+# The website and its videos, and the test suite: nothing the pack loads at run time.
+docs/
+tests/
+.github/
