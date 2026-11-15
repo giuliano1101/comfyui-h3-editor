@@ -157,10 +157,23 @@ def pack(project_dir, root_name, folder, data, keep, target, release="unknown"):
     return manifest
 
 
+# Names Windows gives a meaning of its own, whatever extension follows: writing to one goes to a device, not a file.
+DEVICES = {"con", "prn", "aux", "nul", "conin$", "conout$"} | {"%s%s" % (port, n) for port in ("com", "lpt") for n in range(10)}
+# A colon names a drive or a stream of another file or folder on Windows (history::$INDEX_ALLOCATION is the folder
+# history), and the rest are characters no file there can have. The editor names every file it writes without them.
+UNSAFE = set(':<>"|?*')
+
+
+def _plain(part):
+    """Whether one name of a path means, on every system, the file or folder it spells."""
+    return (part not in ("..", "") and not any(c in UNSAFE or ord(c) < 32 for c in part)
+            and part.rstrip(". ").split(".")[0].strip().lower() not in DEVICES)
+
+
 def _member_path(name):
     """A member's path inside the project folder, or an ArchiveError if it would land anywhere else."""
     clean = name.replace("\\", "/")
-    if clean.startswith("/") or ":" in clean.split("/")[0] or any(part in ("..", "") for part in clean[len("files/"):].split("/")):
+    if clean.startswith("/") or not all(_plain(part) for part in clean.split("/")):
         raise ArchiveError("the zip holds a file with an unsafe path: %s" % name[:120])
     return clean[len("files/"):]
 

@@ -134,6 +134,17 @@ class ArchiveTest(unittest.TestCase):
         with self.assertRaises(archive.ArchiveError):
             archive.read(self.zip_with([("files/../../evil.py", "x")]))
 
+    def test_a_name_that_windows_reads_as_something_else_is_refused(self):
+        # A stream of the history folder or of the project file, a drive, a device, and characters no file can have.
+        for name in ("files/history::$INDEX_ALLOCATION/000050.json", "files/project.json::$DATA", "files/clips/take.mp4:hidden",
+                     "files/C:/evil.py", "files/clips/NUL", "files/clips/con.txt", "files/COM1/x.txt", "files/aux .mp4",
+                     "files/clips/a?.mp4", "files/clips/a.mp4", "files/clips/a|b.mp4"):
+            with self.subTest(name):
+                with self.assertRaises(archive.ArchiveError):
+                    archive.read(self.zip_with([(name, "x")]))
+        # Names that only look like them are files like any other.
+        archive.read(self.zip_with([("files/clips/console.mp4", "x"), ("files/assets/null.png", "x"), ("files/exports/My film_001.mp4", "x")]))
+
     def test_a_file_outside_files_is_refused(self):
         with self.assertRaises(archive.ArchiveError):
             archive.read(self.zip_with([("evil.py", "x")]))
