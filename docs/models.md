@@ -214,8 +214,11 @@ The editor does not know what a patch does, and no pack is needed for the
 editor itself. It cannot tell you whether a patch helps or harms: some speed a
 render up at a cost to the picture, some only save memory, and some do not
 work with every checkpoint. Render the same clip with the same seed with the
-patch and without it, compare how long each took, and look at both. For clips
-that join, `h3.py cuts` scores the cuts of each version. If a render is
+patch and without it, compare how long each took, and look at both. Compare
+at the size you mean to use it: a patch that costs a fixed time at every step
+can make a short draft slower and a long final much faster, and the tick box
+turns it off for the drafts. For clips that join, `h3.py cuts` scores the cuts
+of each version. If a render is
 refused, the message names the patch and the setting that its node does not
 accept.
 

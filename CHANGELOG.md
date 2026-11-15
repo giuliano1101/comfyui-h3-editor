@@ -5,7 +5,7 @@ What changed in each release of H3 Editor, newest first. Versions follow
 version can change how projects or the API behave, and the entry says so.
 Each release is a tag on GitHub, `v` followed by the version.
 
-## Unreleased
+## 0.9.0, 2026-11-15
 
 ### Added
 
@@ -24,6 +24,26 @@ Each release is a tag on GitHub, `v` followed by the version.
   nodes with their inputs under `patches`. The editor names no other pack and
   needs none. It cannot know whether a patch helps or harms: render a clip
   with it and without, and compare the render time and `h3.py cuts`.
+  Measured with one, Veda Sparse Attention at 90% sparsity on MiniMax H3 Turbo:
+  a 3.8 second draft took more than twice as long, a 3.8 second final was
+  about 1.3 times faster, and an 8 second final of a bridge 2.3 times faster
+  in one run, with the same scores at both of its cuts. All three 3.8 second
+  finals made with it have a small jump 5 frames before their end, which the
+  editor's checks report as a change of picture inside the take; the finals
+  made without it and the drafts do not. That node accepts plain MiniMax H3
+  checkpoints and refuses HyperFlow H3 Flash.
+
+### Fixed
+
+- **A project zip can no longer bring a revision history.** A zip made by hand
+  could carry files that landed in the new project's history, its previews or
+  its project file, and restoring such a revision brought back whatever it
+  held. Opening a zip now passes over everything that **Download as zip** never
+  packs, and the project starts with one revision. Zips made by the editor
+  open as before.
+- **Zip paths that Windows reads as another file are refused:** a name with a
+  colon, a control character, one of `< > " | ? *`, or a device name such as
+  `NUL`. The editor writes no such names.
 
 ## 0.8.0, 2026-11-15
 
