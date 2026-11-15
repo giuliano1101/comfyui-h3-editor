@@ -144,6 +144,8 @@ Each release is a tag on GitHub, `v` followed by the version.
 
 - The side panel's tabs no longer make the panel scroll sideways at its usual
   width.
+- Space plays again after a choice from a menu followed by a scrub of the
+  timeline. The menu kept the keyboard, so Space opened it instead.
 
 ## 0.7.0, 2026-11-13
 
