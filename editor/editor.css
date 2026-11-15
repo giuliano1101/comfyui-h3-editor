@@ -352,6 +352,32 @@ label.lora-name { cursor: pointer; }
 .lora-note.missing { color: var(--danger); }
 .lora .small { flex: none; padding: 4px 10px; font-size: 12px; }
 .lora.off .lora-name span, .lora.off .strength { opacity: 0.45; }
+/* A model patch: a LoRA's row, with its node's own inputs under it, each a name and a control. */
+.patch.off .patch-line, .patch.off .patch-controls { opacity: 0.45; }
+.patch .icon-btn:disabled { opacity: 0.35; }
+.patch-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.patch .patch-fold { flex: 0 1 auto; min-width: 0; margin-right: auto; }
+.patch-fold span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.patch-controls { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px 10px; align-items: center; margin-top: 8px; padding: 10px; border-radius: var(--radius); background: var(--room); }
+.patch-control { display: contents; }
+.patch-control > span { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.patch-control > input:not([type="checkbox"]), .patch-control > select, .patch-control > textarea { width: 100%; min-width: 0; padding: 5px 9px; background-color: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.patch-control > input:not([type="checkbox"]):hover, .patch-control > select:hover, .patch-control > textarea:hover { border-color: var(--line-hi); }
+.patch-control > input[type="number"] { font-variant-numeric: tabular-nums; }
+.patch-control > input:invalid { border-color: var(--danger); }
+.patch-control > textarea { resize: vertical; min-height: 60px; }
+.patch-control.switch { display: flex; grid-column: 1 / -1; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; }
+.patch-control.switch > input { flex: none; width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.patch-control.switch > span { color: var(--text); font-size: inherit; }
+.patch-controls .patch-hint { grid-column: 1 / -1; margin: -4px 0 2px; }
+.patch .patch-about { margin: 0 0 6px; }
+.patch-lost { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; color: var(--danger); font-size: 12px; }
+.patch-lost span { flex: 1; min-width: 0; }
+/* In a narrow panel a name sits above its control. */
+@container (max-width: 320px) {
+  .patch-controls { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .patch-control > input:not([type="checkbox"]), .patch-control > select, .patch-control > textarea { margin-bottom: 6px; }
+}
 /* When a LoRA joins: chips for the usual starts, then the render as a bar, lit where the LoRA works. */
 .lora-start { display: grid; gap: 4px; margin: 8px 0 0; padding: 10px 10px 8px; border-radius: var(--radius); background: var(--room); }
 .start-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }

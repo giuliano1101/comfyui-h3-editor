@@ -286,6 +286,12 @@ Renders queue on the user's GPU one at a time. Measured with the models loaded:
   strength), which every new render samples with, and a clip can carry its own (`loras` in
   its fields). Add one only when the user names it or asks for its look, and render a draft
   to check its effect;
+- a project can put model patches on every render (`set_project` `patches`): nodes from the
+  user's other packs that change how the model runs, such as sparse or low-memory attention,
+  a step cache or a compile node. `GET /projects` lists the installed ones with their inputs
+  under `patches`. Add one only when the user asks for it. The editor cannot know whether a
+  patch helps or harms: render the same clip with the same seed with it and without, compare
+  the render times and `h3.py cuts`, look at both, and tell the user what you found;
 - the first render after ComfyUI starts, or after a change of profile, also loads the
   models, about 20 GB each.
 

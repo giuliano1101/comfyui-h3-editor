@@ -36,6 +36,7 @@ const state = {
   profiles: [],
   finals: [],
   loras: [],
+  patches: [],
   realism: null,
   sizes: null,
   upscalers: [],
@@ -1559,6 +1560,8 @@ const ICONS = {
   picture: '<rect x="4" y="5" width="16" height="14" rx="1.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 4.5 4.5"/>',
   close: '<path d="M7 7l10 10M17 7L7 17"/>',
   chevron: '<path d="M7.5 10l4.5 4.5 4.5-4.5"/>',
+  up: '<path d="M7.5 14l4.5-4.5 4.5 4.5"/>',
+  patch: '<path d="M3.5 12h4M16.5 12h4"/><rect x="7.5" y="7.5" width="9" height="9" rx="1.5"/><circle class="solid" cx="12" cy="12" r="1.4"/>',
   pin: '<path d="M9 4h6l-.9 5.2 3.4 3.3H6.5l3.4-3.3z"/><path d="M12 12.5V20"/>',
   restore: '<path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M5 4.5v3.7h3.7"/>',
   settings: '<path d="M4.5 7.5H13M17 7.5h2.5M4.5 16.5H7M11 16.5h8.5"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/>',
@@ -2571,14 +2574,18 @@ function starred(key) {
   try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); } catch (_) { return new Set(); }
 }
 
-function pickFile2(title, files, hint, favoritesKey = null) {
+function pickFile2(title, files, hint, favoritesKey = null, show = null) {
   const dialog = $("picker");
   const search = $("pickerSearch");
   const list = $("pickerList");
   $("pickerTitle").textContent = title;
   $("pickerHint").textContent = hint;
   search.value = "";
-  search.placeholder = "Search " + files.length + (files.length === 1 ? " file" : " files");
+  // A list of something other than files says how each entry reads: its name, where it is from, and the words a search finds it by.
+  const nameOf = show?.name || loraName;
+  const whereOf = show?.where || ((file) => file.replaceAll("\\", "/").split("/").slice(0, -1).join("/"));
+  const textOf = show?.text || ((file) => file);
+  search.placeholder = "Search " + files.length + " " + (files.length === 1 ? show?.noun?.[0] || "file" : show?.noun?.[1] || "files");
   let active = 0;
   let shown = [];
   return new Promise((resolve) => {
@@ -2596,7 +2603,7 @@ function pickFile2(title, files, hint, favoritesKey = null) {
       if (event) active = 0;
       // Every word typed must be somewhere in the name, in any order.
       const words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
-      shown = files.filter((f) => words.every((w) => f.toLowerCase().includes(w)));
+      shown = files.filter((f) => words.every((w) => textOf(f).toLowerCase().includes(w)));
       const stars = favoritesKey ? starred(favoritesKey) : null;
       // Favourites come first, each group in the order the folder lists them.
       if (stars) shown = [...shown.filter((f) => stars.has(f)), ...shown.filter((f) => !stars.has(f))];
@@ -2616,9 +2623,9 @@ function pickFile2(title, files, hint, favoritesKey = null) {
         item.setAttribute("aria-selected", String(index === active));
         item.title = file;
         const name = document.createElement("b");
-        name.textContent = loraName(file);
+        name.textContent = nameOf(file);
         item.append(name);
-        const folder = file.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+        const folder = whereOf(file);
         if (folder) {
           const where = document.createElement("span");
           where.textContent = folder;
@@ -2631,7 +2638,7 @@ function pickFile2(title, files, hint, favoritesKey = null) {
         const star = document.createElement("button");
         star.className = "picker-star";
         star.setAttribute("aria-pressed", String(stars.has(file)));
-        star.setAttribute("aria-label", (stars.has(file) ? "Remove " : "Add ") + loraName(file) + (stars.has(file) ? " from" : " to") + " favorites");
+        star.setAttribute("aria-label", (stars.has(file) ? "Remove " : "Add ") + nameOf(file) + (stars.has(file) ? " from" : " to") + " favorites");
         star.title = stars.has(file) ? "A favorite. Click to remove it" : "Make it a favorite, so it lists first";
         star.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.6 5.2-.8z"/></svg>';
         star.addEventListener("click", () => {
@@ -2830,6 +2837,304 @@ function loraSection(clip = null) {
   return clip ? children : section("LoRAs", children, "layers");
 }
 
+// Model patches: nodes of any installed pack that take the model and hand it back changed. A project
+// lists the ones every render samples with, and each row's controls are drawn from the node's own
+// definition, as the server reads it from ComfyUI. The editor does not know what any of them does.
+const PATCH_LIMIT = 8;
+const patchOf = (node) => state.patches.find((p) => p.node === node) || null;
+const inputLabel = (name) => name.replaceAll("_", " ");
+// Rows whose controls are folded away or shown against the usual, so they stay that way while the panel is drawn again.
+const patchFolds = new Set();
+
+// What a patch changes from its node's defaults, in a few words.
+function patchSummary(entry, known) {
+  const set = known.controls.filter((c) => Object.hasOwn(entry.inputs || {}, c.name) && entry.inputs[c.name] !== c.default);
+  if (!set.length) return known.controls.length ? "Defaults" : "No settings";
+  return set.map((c) => inputLabel(c.name) + " " + (typeof entry.inputs[c.name] === "boolean" ? (entry.inputs[c.name] ? "on" : "off") : entry.inputs[c.name])).join(", ");
+}
+
+// One input of a patch's node as a control: a number with its range and step, a switch, a menu or text.
+function patchControl(entry, control, write) {
+  const given = Object.hasOwn(entry.inputs || {}, control.name);
+  const value = given ? entry.inputs[control.name] : control.default;
+  const wrap = document.createElement("label");
+  wrap.className = "patch-control" + (control.kind === "bool" ? " switch" : "");
+  const title = document.createElement("span");
+  title.textContent = inputLabel(control.name);
+  const key = "Patch " + entry.id + " " + control.name;
+  let input;
+  if (control.kind === "choice") {
+    input = document.createElement("select");
+    const options = control.options.map(String);
+    // A value the node no longer offers stays visible, so it is clear why a render is refused.
+    const lost = value !== null && value !== undefined && !options.includes(String(value));
+    for (const text of lost ? [String(value), ...options] : options) {
+      const option = document.createElement("option");
+      option.value = text;
+      option.textContent = lost && text === String(value) ? text + " (not on offer)" : text;
+      option.selected = text === String(value);
+      input.append(option);
+    }
+    input.addEventListener("change", () => {
+      const at = options.indexOf(input.value);
+      if (at < 0) return;
+      checkpoint();
+      write(control.options[at]);
+    });
+  } else if (control.kind === "bool") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = value === true;
+    input.addEventListener("change", () => {
+      checkpoint();
+      write(input.checked);
+    });
+  } else if (control.kind === "text") {
+    input = document.createElement(control.multiline ? "textarea" : "input");
+    if (!control.multiline) input.type = "text";
+    input.value = typeof value === "string" ? value : String(value ?? "");
+    input.spellcheck = false;
+    input.addEventListener("input", () => write(input.value));
+  } else {
+    input = document.createElement("input");
+    input.type = "number";
+    const whole = control.kind === "int";
+    if (typeof control.min === "number") input.min = control.min;
+    if (typeof control.max === "number") input.max = control.max;
+    input.step = typeof control.step === "number" && control.step > 0 ? control.step : whole ? 1 : "any";
+    input.value = typeof value === "number" ? value : "";
+    const limits = [typeof control.min === "number" ? "from " + control.min : "", typeof control.max === "number" ? "to " + control.max : ""].filter(Boolean).join(" ");
+    if (limits) input.placeholder = limits;
+    const fits = (v) => Number.isFinite(v) && (!whole || Number.isInteger(v))
+      && (typeof control.min !== "number" || v >= control.min) && (typeof control.max !== "number" || v <= control.max);
+    // A number is saved once it is one the node takes. The node's step is for the arrows, not a rule.
+    input.addEventListener("input", () => {
+      if (input.value !== "" && fits(Number(input.value))) write(Number(input.value));
+    });
+    input.addEventListener("change", () => {
+      let v = Number(input.value);
+      if (input.value === "" || !Number.isFinite(v)) v = typeof control.default === "number" ? control.default : 0;
+      if (whole) v = Math.round(v);
+      if (typeof control.min === "number") v = Math.max(control.min, v);
+      if (typeof control.max === "number") v = Math.min(control.max, v);
+      input.value = v;
+      write(v);
+    });
+  }
+  input.dataset.key = key;
+  if (control.kind !== "choice" && control.kind !== "bool") input.addEventListener("focus", () => checkpoint(), { once: true });
+  const tip = [control.tooltip || "", control.kind === "int" || control.kind === "float"
+    ? [typeof control.min === "number" ? "From " + control.min : "", typeof control.max === "number" ? "to " + control.max : ""].filter(Boolean).join(" ") : "",
+  "Usual: " + (control.default === "" ? "empty" : typeof control.default === "boolean" ? (control.default ? "on" : "off") : control.default)]
+    .filter(Boolean).map((part) => part.replace(/[.\s]+$/, "")).join(". ") + ".";
+  wrap.title = tip;
+  if (control.kind === "bool") wrap.append(input, title);
+  else wrap.append(title, input);
+  const parts = [wrap];
+  if (control.tooltip) {
+    // The node's own words for the input, shown with the other explanations.
+    const hint = document.createElement("p");
+    hint.className = "hint help patch-hint";
+    hint.textContent = control.tooltip;
+    parts.push(hint);
+  }
+  return parts;
+}
+
+function patchSection() {
+  // A save swaps the project for the server's copy, so the list is found again each time it is changed.
+  const rows = (state.project.patches || []).filter((row) => row && typeof row.node === "string" && typeof row.id === "string");
+  if (!rows.length && !state.patches.length) return null;
+  // Unlike a pointer, a keyboard must find its button again after the panel is drawn anew.
+  const change = (edit) => {
+    const focus = rememberFocus();
+    checkpoint();
+    edit();
+    save();
+    renderInspector();
+    restoreFocus(focus);
+  };
+  const list = document.createElement("div");
+  list.className = "loras patches";
+  rows.forEach((entry, index) => {
+    const live = () => (state.project.patches || []).find((r) => r && r.id === entry.id) || {};
+    const known = patchOf(entry.node);
+    const on = entry.on !== false;
+    const title = known?.title || entry.node;
+    const row = document.createElement("div");
+    row.className = "lora patch" + (on && known ? "" : " off");
+    const head = document.createElement("div");
+    head.className = "lora-head";
+    const toggle = document.createElement("label");
+    toggle.className = "lora-name";
+    toggle.title = known ? [title, known.pack, known.category, known.about].filter(Boolean).join("\n") : entry.node;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = on;
+    box.dataset.key = "Patch " + entry.id + " on";
+    box.addEventListener("change", () => change(() => (live().on = box.checked)));
+    const name = document.createElement("span");
+    name.textContent = title;
+    toggle.append(box, name);
+    head.append(toggle);
+    if (!known) {
+      const note = document.createElement("span");
+      note.className = "lora-note missing";
+      note.textContent = "Not installed";
+      note.title = "Renders leave it out until the pack with the node " + entry.node + " is installed in this ComfyUI.";
+      head.append(note);
+    }
+    // The order matters to some patches: each one gets the model as the one above left it.
+    const move = (by) => {
+      change(() => {
+        const all = state.project.patches;
+        const from = all.indexOf(live());
+        const to = all.indexOf((state.project.patches || []).find((r) => r && r.id === rows[index + by]?.id));
+        if (from < 0 || to < 0) return;
+        all.splice(to, 0, all.splice(from, 1)[0]);
+      });
+      // At the top or the bottom its own button is spent, and the other one takes the focus.
+      const mine = (way) => $("inspector").querySelector('[data-key="' + CSS.escape("Patch " + entry.id + " " + way) + '"]');
+      const same = mine(by < 0 ? "up" : "down");
+      (same && !same.disabled ? same : mine(by < 0 ? "down" : "up"))?.focus();
+    };
+    const up = iconButton("up", "Move " + title + " up", () => move(-1));
+    up.dataset.key = "Patch " + entry.id + " up";
+    up.disabled = index === 0;
+    const down = iconButton("chevron", "Move " + title + " down", () => move(1));
+    down.dataset.key = "Patch " + entry.id + " down";
+    down.disabled = index === rows.length - 1;
+    if (rows.length > 1) head.append(up, down);
+    head.append(trashButton("Remove " + title, () => change(() => {
+      state.project.patches = state.project.patches.filter((r) => r !== live());
+      if (!state.project.patches.length) delete state.project.patches;
+    })));
+    row.append(head);
+    if (known?.about) {
+      // What the node says about itself, shown with the other explanations.
+      const about = document.createElement("p");
+      about.className = "hint help patch-about";
+      about.textContent = known.about;
+      row.append(about);
+    }
+    if (known) {
+      const stale = Object.keys(entry.inputs || {}).filter((n) => !known.controls.some((c) => c.name === n));
+      if (stale.length) {
+        const lost = document.createElement("div");
+        lost.className = "patch-lost";
+        const words = document.createElement("span");
+        words.textContent = "The node no longer takes " + stale.join(", ") + ". Renders are refused until " + (stale.length === 1 ? "it is" : "they are") + " dropped.";
+        const drop = document.createElement("button");
+        drop.className = "quiet small";
+        drop.textContent = "Drop";
+        drop.dataset.key = "Patch " + entry.id + " drop";
+        drop.addEventListener("click", () => change(() => {
+          for (const n of stale) delete live().inputs[n];
+        }));
+        lost.append(words, drop);
+        row.append(lost);
+      }
+      if (known.controls.length) {
+        // A patch with something set shows its controls. The button folds them away or brings them back.
+        const open = (Object.keys(entry.inputs || {}).length > 0) !== patchFolds.has(entry.id);
+        const fold = document.createElement("button");
+        fold.className = "quiet small start-toggle patch-fold";
+        fold.dataset.key = "Patch " + entry.id + " settings";
+        const says = document.createElement("span");
+        says.textContent = patchSummary(entry, known);
+        fold.append(says, icon("chevron"));
+        fold.title = (open ? "Hide" : "Show") + " the settings of " + title;
+        fold.setAttribute("aria-expanded", String(open));
+        fold.addEventListener("click", () => {
+          const focus = rememberFocus();
+          if (patchFolds.has(entry.id)) patchFolds.delete(entry.id);
+          else patchFolds.add(entry.id);
+          renderInspector();
+          restoreFocus(focus);
+        });
+        const line = document.createElement("div");
+        line.className = "patch-line";
+        line.append(fold);
+        const changed = known.controls.some((c) => Object.hasOwn(entry.inputs || {}, c.name));
+        if (changed) {
+          const reset = document.createElement("button");
+          reset.className = "quiet small";
+          reset.textContent = "Reset";
+          reset.title = "Back to the node's own defaults";
+          reset.dataset.key = "Patch " + entry.id + " reset";
+          reset.addEventListener("click", () => change(() => {
+            // The row stays folded or open as it is: with nothing set, the usual is the other way round.
+            if (open) patchFolds.add(entry.id);
+            else patchFolds.delete(entry.id);
+            live().inputs = {};
+          }));
+          line.append(reset);
+        }
+        row.append(line);
+        if (open) {
+          const controls = document.createElement("div");
+          controls.className = "patch-controls";
+          for (const control of known.controls) {
+            controls.append(...patchControl(entry, control, (v) => {
+              // Typing saves without drawing the panel again, so the caret stays. The project names only what it changes.
+              const mine = live();
+              const was = Object.keys(mine.inputs || {}).length > 0;
+              mine.inputs = { ...(mine.inputs || {}) };
+              if (v === control.default) delete mine.inputs[control.name];
+              else mine.inputs[control.name] = v;
+              // The row keeps its controls open whether or not anything is still set.
+              if ((Object.keys(mine.inputs).length > 0) !== was) {
+                if (patchFolds.has(entry.id)) patchFolds.delete(entry.id);
+                else patchFolds.add(entry.id);
+              }
+              says.textContent = patchSummary(mine, known);
+              save();
+            }));
+          }
+          row.append(controls);
+        }
+      }
+    }
+    list.append(row);
+  });
+  const children = [];
+  if (list.children.length) children.push(list);
+  if (rows.length >= PATCH_LIMIT) {
+    const full = document.createElement("p");
+    full.className = "hint";
+    full.textContent = "A project takes up to " + PATCH_LIMIT + " model patches. Remove one to add another.";
+    children.push(full);
+  } else if (state.patches.length) {
+    const add = document.createElement("button");
+    add.className = "quiet wide";
+    add.textContent = "Add a patch";
+    add.dataset.key = "Add a patch";
+    add.addEventListener("click", async () => {
+      const node = await pickFile2("Add a model patch", state.patches.map((p) => p.node),
+        "Nodes of the installed packs that take the model and plain values, and return the model. The ones for MiniMax H3 or attention list first. Star the ones you use.",
+        "h3take.patchFavorites", {
+          name: (id) => patchOf(id)?.title || id,
+          where: (id) => patchOf(id)?.pack || "",
+          text: (id) => [id, patchOf(id)?.title, patchOf(id)?.pack, patchOf(id)?.category].join(" "),
+          noun: ["node", "nodes"],
+        });
+      if (!node) return;
+      checkpoint();
+      state.project.patches = [...(state.project.patches || []), { id: "p" + crypto.randomUUID().replaceAll("-", "").slice(0, 8), node, inputs: {}, on: true }];
+      save();
+      renderInspector();
+      $("inspector").querySelector('[data-key="Add a patch"]')?.focus();
+    });
+    children.push(add);
+  }
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Every new render puts these on the model, in this order, after the LoRAs. The editor cannot tell whether a patch helps or harms: render a clip with it and without, and compare the time and the picture.";
+  children.push(hint);
+  const active = rows.filter((r) => r.on !== false && patchOf(r.node)).length;
+  return disclosure("Model patches", rows.length > 0, rows.length ? active + " on" : "", children, "patch");
+}
+
 function renderScene(panel, selected = false) {
   const head = document.createElement("div");
   head.className = "inspector-head";
@@ -2940,7 +3245,7 @@ function renderScene(panel, selected = false) {
     section("Look", [field("Style for every clip", state.project.style, (v) => (state.project.style = v), { area: true })], "look"),
     section("Format", [made, formatHint, ...sizeChoices()], "format"),
     ...(state.profiles.length ? [section("Model", [model, modelHint, ...files], "model")] : []),
-    ...[loraSection(), writingSection(), notesSection()].filter(Boolean),
+    ...[loraSection(), patchSection(), writingSection(), notesSection()].filter(Boolean),
   );
 }
 
@@ -3437,7 +3742,9 @@ function versions(clip) {
     const label = document.createElement("span");
     label.textContent = "Take " + (index + 1) + ", " + take.quality;
     const madeWith = take.models?.profile_title || profileOf(take.models?.profile)?.title;
-    if (madeWith) label.title = "Made with " + madeWith + (take.models?.steps ? ", " + take.models.steps + " steps, " + take.models.sampler : "");
+    const patched = (take.models?.patches || []).map((row) => patchOf(row.node)?.title || row.node);
+    if (madeWith) label.title = "Made with " + madeWith + (take.models?.steps ? ", " + take.models.steps + " steps, " + take.models.sampler : "")
+      + (patched.length ? ", patched with " + patched.join(", ") : "");
     const seed = document.createElement("small");
     seed.textContent = "Seed " + take.seed;
     button.append(img, label, seed);
@@ -6971,7 +7278,7 @@ async function openProject(folder) {
 }
 
 async function refreshProjects(selected) {
-  const { projects, titles, cards, profiles, finals, loras, realism, checkpoints, samplers, schedulers, presets, refmods, encoders, sizes, upscalers, catalog } = await api("/projects");
+  const { projects, titles, cards, profiles, finals, loras, patches, realism, checkpoints, samplers, schedulers, presets, refmods, encoders, sizes, upscalers, catalog } = await api("/projects");
   state.encoders = encoders || { text_encoders: [], vaes: [], auto: {}, missing: [] };
   state.presets = presets || [];
   state.refmods = refmods || { installed: false, files: [] };
@@ -6983,6 +7290,7 @@ async function refreshProjects(selected) {
   state.profiles = profiles || [];
   state.finals = finals || [];
   state.loras = loras || [];
+  state.patches = patches || [];
   state.realism = realism || null;
   state.sizes = sizes || null;
   state.upscalers = upscalers || [];

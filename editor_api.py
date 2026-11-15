@@ -21,6 +21,7 @@ from . import cuts as cutscore
 from . import listen as soundscore
 from . import detail as finescore
 from . import media
+from . import patches as patching
 from . import project as store
 from .policy import editor_id, group_by_model
 
@@ -319,6 +320,49 @@ def available_models():
     if store.PROJECTION_FOLDER in folder_paths.folder_names_and_paths:
         names.update(store.PROJECTION_PREFIX + name for name in folder_paths.get_filename_list(store.PROJECTION_FOLDER))
     return names
+
+
+def node_definitions():
+    """The installed nodes that return one model, each as ComfyUI's GET /object_info describes it.
+
+    Read from the node classes, as that route does, so nothing is imported from another pack.
+    A node whose definition cannot be read is left out: it could not be drawn or wired anyway.
+    """
+    import nodes as comfy_nodes
+
+    found = {}
+    for node_id, cls in list(comfy_nodes.NODE_CLASS_MAPPINGS.items()):
+        try:
+            # Most nodes return something else, and are passed over before their inputs are asked for.
+            if tuple(getattr(cls, "RETURN_TYPES", None) or ()) != ("MODEL",):
+                continue
+            if hasattr(cls, "GET_NODE_INFO_V1"):
+                found[node_id] = cls.GET_NODE_INFO_V1()
+                continue
+            found[node_id] = {
+                "input": cls.INPUT_TYPES(), "output": list(cls.RETURN_TYPES),
+                "output_is_list": list(getattr(cls, "OUTPUT_IS_LIST", None) or ()),
+                "display_name": comfy_nodes.NODE_DISPLAY_NAME_MAPPINGS.get(node_id, node_id),
+                "description": getattr(cls, "DESCRIPTION", ""), "category": getattr(cls, "CATEGORY", ""),
+                "python_module": getattr(cls, "RELATIVE_PYTHON_MODULE", "nodes"),
+            }
+        except Exception:
+            logging.debug("H3 Editor could not read the definition of %s", node_id, exc_info=True)
+    return found
+
+
+def patch_list():
+    """The installed nodes a project can put on the model wire, without this pack's own."""
+    from . import nodes, preview
+
+    # Every render already ends the model wire with the shift, set from the project: a second one would do nothing.
+    own = set(nodes.NODE_CLASS_MAPPINGS) | set(preview.NODE_CLASS_MAPPINGS) | {"MiniMaxH3SigmaShift"}
+    return patching.listing(node_definitions(), own)
+
+
+def installed_patches():
+    """The same nodes by id, as a render graph takes them."""
+    return {row["node"]: row for row in patch_list()}
 
 
 def lora_files():
@@ -739,7 +783,7 @@ async def projects(request):
     cards = project_cards(names)
     return web.json_response({"projects": names, "titles": project_titles(names, cards), "cards": cards, "profiles": store.profile_status(available),
                               "finals": store.finals_status(available),
-                              "loras": lora_files(), "realism": store.lora_status(available), "presets": read_presets(), "catalog": read_catalog(), "refmods": refmods_status(), "encoders": encoder_choices(available), "sizes": store.size_choices(), "upscalers": store.upscaler_status(available), "release": pack_version(), **sampling_choices()})
+                              "loras": lora_files(), "patches": patch_list(), "realism": store.lora_status(available), "presets": read_presets(), "catalog": read_catalog(), "refmods": refmods_status(), "encoders": encoder_choices(available), "sizes": store.size_choices(), "upscalers": store.upscaler_status(available), "release": pack_version(), **sampling_choices()})
 
 
 async def create(request):
@@ -1365,7 +1409,7 @@ async def graph(request):
     body = await request.json()
     try:
         built = store.render_graph(body["project"], store.slug(name), body["clip"], body["take"], body["quality"], body["seed"],
-                                   available_models())
+                                   available_models(), installed_patches())
     except ValueError as error:
         raise web.HTTPBadRequest(text=str(error))
     return web.json_response({"graph": own_nodes(built)})
@@ -1474,8 +1518,10 @@ def comfy_queue():
     return {entry[1] for entry in running}, {entry[1] for entry in queued}
 
 
-async def start_render(data, folder, clip_id, quality, seed=None, client_id=None, detail=None, upscaler=None):
-    job, graph = store.plan_render(data, folder, clip_id, quality or "draft", seed, available_models(), detail, upscaler)
+async def start_render(data, folder, clip_id, quality, seed=None, client_id=None, detail=None, upscaler=None, patches=None):
+    """Queue one render. patches is the installed patch nodes, for a batch that has read them already."""
+    job, graph = store.plan_render(data, folder, clip_id, quality or "draft", seed, available_models(), detail, upscaler,
+                                   installed_patches() if patches is None else patches)
     job["id"] = await queue_prompt(graph, client_id)
     store.add_pending(data, job)
     return job
@@ -1542,6 +1588,8 @@ async def operations(request):
         names, results, later = {}, [], []
         catalog = read_catalog() if any(isinstance(op, dict) and op.get("op") in CATALOG_OPS for op in ops) else None
         catalog_before = copy.deepcopy(catalog)
+        # The installed patch nodes are read once for the whole batch, however many renders it holds.
+        patches = installed_patches() if any(isinstance(op, dict) and op.get("op") == "render" for op in ops) else None
         for index, op in enumerate(ops):
             kind = op.get("op") if isinstance(op, dict) else None
             try:
@@ -1550,7 +1598,8 @@ async def operations(request):
                 elif kind == "render":
                     clip_id = store._resolve(op.get("clip"), names, "clip")
                     planned, _ = store.plan_render(copy.deepcopy(work), folder, clip_id, op.get("quality") or "draft",
-                                                   op.get("seed"), available_models(), op.get("detail"), op.get("upscaler"))
+                                                   op.get("seed"), available_models(), op.get("detail"), op.get("upscaler"),
+                                                   patches)
                     later.append((index, op, clip_id, planned.get("loads") or planned["models"]["unet"]))
                     results.append(None)
                 elif kind == "cancel":
@@ -1591,7 +1640,8 @@ async def operations(request):
         for index, op, clip_id, _ in arranged:
             try:
                 if op["op"] == "render":
-                    job = await start_render(work, folder, clip_id, op.get("quality"), op.get("seed"), op.get("client_id"), op.get("detail"), op.get("upscaler"))
+                    job = await start_render(work, folder, clip_id, op.get("quality"), op.get("seed"), op.get("client_id"), op.get("detail"), op.get("upscaler"),
+                                             patches)
                     results[index] = {"clip": clip_id, "job": job["id"], "take": job["take"]}
                 elif op["op"] == "make_refmod":
                     cast_id, name, graph = clip_id

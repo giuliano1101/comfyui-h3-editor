@@ -22,7 +22,7 @@ except the two uploads.
 | `POST /projects/open` | the zip as the body, `Content-Type: application/zip` | Opens a zip made by `archive` as a new project, under its old name or that name with a number. The body is written to disk as it arrives, so ComfyUI's upload size limit does not apply. Returns `{"folder", "name", "release", "keep", "missing_loras", "outside", "files"}`; 400 with a reason for a zip that is not a project, holds unsafe paths or links, or comes from a newer release |
 | `POST /project/{name}/duplicate` | optional `{"name"}` | A copy in a folder of its own, with its clips, takes and pictures, and no renders pending. The default name is the original's with `copy` after it. Returns `{"folder", "project"}`; 409 when the name is taken |
 | `DELETE /project/{name}` | | Moves the project's folder to `h3take_projects/.trash`; nothing is erased. Refused with 409 while it is rendering. Do this only when the user asks. Returns `{"deleted", "trash"}` |
-| `GET /projects` | | `{"projects": [folder, ...], "titles": {folder: name, ...}, "cards": {folder: {"name", "format", "clips", "frames", "picture", "rendering", "changed"}, ...}, "profiles": [{"id", "title", "hint", "available", "missing"}, ...], "finals": [note, ...], "loras": [file, ...], "realism": {"file", "strength", "installed", "range", "lora_range", "limit"}, "checkpoints": [file, ...], "samplers": [name, ...], "schedulers": [name, ...]}`. Each profile also carries its `steps`, `sampler` and `scheduler`. `finals` says what finals leave out because a file is missing, `loras` lists every file in `models/loras`, and `realism` describes the Realism Slider that finals run. `cards` is what a project list shows: `clips` and `frames` count what is on the timeline, `picture` is the `{"file", "subfolder"}` of the first rendered clip's poster or null, `rendering` is how many renders are queued, and `changed` is when the project file last changed, in seconds since 1970 |
+| `GET /projects` | | `{"projects": [folder, ...], "titles": {folder: name, ...}, "cards": {folder: {"name", "format", "clips", "frames", "picture", "rendering", "changed"}, ...}, "profiles": [{"id", "title", "hint", "available", "missing"}, ...], "finals": [note, ...], "loras": [file, ...], "patches": [{"node", "title", "category", "pack", "model", "controls"}, ...], "realism": {"file", "strength", "installed", "range", "lora_range", "limit"}, "checkpoints": [file, ...], "samplers": [name, ...], "schedulers": [name, ...]}`. Each profile also carries its `steps`, `sampler` and `scheduler`. `finals` says what finals leave out because a file is missing, `loras` lists every file in `models/loras`, `patches` lists the installed nodes a project can put on the model (see `set_project` `patches`), and `realism` describes the Realism Slider that finals run. `cards` is what a project list shows: `clips` and `frames` count what is on the timeline, `picture` is the `{"file", "subfolder"}` of the first rendered clip's poster or null, `rendering` is how many renders are queued, and `changed` is when the project file last changed, in seconds since 1970 |
 | `POST /projects` | `{"name"}` | `{"folder", "project"}`. Opens it if it exists |
 | `GET /project/{name}` | | The whole project |
 | `GET /project/{name}/summary` | | The summary, below |
@@ -282,6 +282,38 @@ drafts and finals alike, and `realism`:
 
 Takes already rendered do not change: render a clip again to see a new strength.
 
+`set_project` also takes `patches`, the model patches every new render of the project samples
+with. A patch is a node of any installed pack that takes the model and plain values and returns
+the model: attention and memory patches, caches, compile nodes and the like.
+
+```json
+{"op": "set_project", "fields": {
+  "patches": [{"node": "SomeAttentionPatch", "inputs": {"chunks": 8}},
+              {"node": "SomeStepCache", "on": false}]}}
+```
+
+- `patches` replaces the whole list: up to 8. Each is put on the model in the order given,
+  after every LoRA, on drafts and on both passes of a final. `"on": false` keeps one in the
+  list without rendering with it. Send `[]` to clear the list. It is set for the project;
+  a clip cannot have its own.
+- `node` is a node id from `patches` in `GET /projects`. That list holds every installed node
+  that returns exactly one MODEL, requires exactly one MODEL, and whose other required
+  inputs are numbers, switches, text or menus. The ones whose name or category mentions H3,
+  MiniMax or attention come first. Each row has the node's `title`, `category`, the `pack` it
+  comes from, sometimes `about`, and its `controls`: `{"name", "kind", "default"}` with `kind`
+  one of `int`, `float`, `bool`, `text` or `choice`, plus `min`, `max` and `step` for a
+  number, `options` for a choice, and the node's own `tooltip`. The pack's own nodes, plain
+  LoRA loaders and the model shift every render already ends with are not listed.
+- `inputs` names only what differs from the node's defaults: `{name: value}`, with the names
+  of `controls`. A render is refused, with the input's name, when a name is not one of the
+  node's or a value is outside its range or options. Nothing is checked when the list is set.
+- A patch whose node is not installed on this machine stays in the project and is left out
+  of renders. The summary lists the project's patches under `patches`.
+- The editor wires a patch as its node's definition says and knows nothing else about it. It
+  cannot tell whether a patch helps or harms on this model, this GPU or this ComfyUI: render
+  the same clip with the same `seed` with it and without, and compare how long the renders
+  took and what `h3.py cuts`, `h3.py detail` and `h3.py look` say about the result.
+
 `set_project` also takes `checkpoints`, the project's own checkpoints: any MiniMax H3 file
 in `models/diffusion_models`, rendered on a built-in family's settings with whatever it
 changes.
@@ -434,7 +466,8 @@ the larger size, so its take is 1920x1088 for 16:9, 1088x1920 for 9:16 and 1440x
 The sound is the first pass's. A take records its picture size in `size` and what made it in
 `models`: `profile`, `unet` and `checkpoint`, a turbo family's `profile_lora` and
 `profile_lora_strength`, for a final `upscaler`, `lora` and `lora_strength`, and the
-project's own LoRAs as `loras`: `[{"file", "strength"}, ...]`. Finals from before this record
+project's own LoRAs as `loras`: `[{"file", "strength"}, ...]`, and the model patches it ran with as
+`patches`: `[{"node", "inputs"}, ...]`, each with every value its node got, defaults included. Finals from before this record
 `upscale` instead of `size`.
 
 ## Replies and errors

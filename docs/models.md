@@ -181,6 +181,40 @@ there leaves it out of that clip.
 The list you pick a LoRA from has a star beside each file. Starred files list
 first, in every project on this browser.
 
+## Model patches
+
+Other packs ship nodes that change how the model runs without being a model
+themselves: sparse or low-memory attention, a cache that skips steps, a
+compile node. In a workflow you would put one between the loader and the
+sampler. The editor can do the same for every render of a project.
+
+The Project tab of the panel on the right has a **Model patches** section.
+**Add a patch** opens a list of the nodes installed in your ComfyUI that take
+one model and plain values and return one model; the ones whose name or
+category mentions H3, MiniMax or attention come first, and typing searches by
+name, pack and category. A patch you add gets a row with its node's own
+settings, drawn from the node's definition: numbers with their range, switches,
+menus and text. The button under its name shows what you changed from the
+node's defaults and folds the settings away; **Reset** goes back to the
+defaults. Turn on the explanations (the question mark at the top of the panel)
+to read what the node says about itself and about each setting.
+
+Every new render puts the ticked patches on the model in the order listed,
+after the LoRAs, on drafts and on both passes of a final. The arrows move a
+patch up or down, the tick box renders without it, and the bin removes it. A
+project takes up to 8. A patch whose pack is not installed shows **Not
+installed** and is left out of renders, so a project still opens and renders
+on a machine without that pack. A take records the patches it was made with.
+
+The editor does not know what a patch does, and no pack is needed for the
+editor itself. It cannot tell you whether a patch helps or harms: some speed a
+render up at a cost to the picture, some only save memory, and some do not
+work with every checkpoint. Render the same clip with the same seed with the
+patch and without it, compare how long each took, and look at both. For clips
+that join, `h3.py cuts` scores the cuts of each version. If a render is
+refused, the message names the patch and the setting that its node does not
+accept.
+
 ## Your own checkpoints
 
 Any other MiniMax H3 checkpoint, such as a community fine-tune, renders in the

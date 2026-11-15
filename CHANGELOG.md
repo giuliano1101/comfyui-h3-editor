@@ -5,6 +5,25 @@ What changed in each release of H3 Editor, newest first. Versions follow
 version can change how projects or the API behave, and the entry says so.
 Each release is a tag on GitHub, `v` followed by the version.
 
+## Unreleased
+
+### Added
+
+- **Model patches.** A project can put nodes from any installed pack on the
+  model of every render: sparse or low-memory attention, a step cache, a
+  compile node, and whatever else takes one model and plain values and returns
+  one model. The Project tab has a **Model patches** section: **Add a patch**
+  searches the installed nodes, with the ones for H3, MiniMax or attention
+  first, and each patch gets a row with its node's own settings, drawn from
+  the node's definition. Patches can be reordered, unticked and removed, and a
+  project takes up to 8. They sit after the LoRAs, on drafts and on both
+  passes of a final, and a take records the ones it was made with. A patch
+  whose pack is not installed is kept in the project and left out of renders.
+  Agents use `set_project` `patches`, and `GET /projects` lists the installed
+  nodes with their inputs under `patches`. The editor names no other pack and
+  needs none. It cannot know whether a patch helps or harms: render a clip
+  with it and without, and compare the render time and `h3.py cuts`.
+
 ## 0.8.0, 2026-11-15
 
 ### Added

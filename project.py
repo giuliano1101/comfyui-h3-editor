@@ -13,9 +13,11 @@ import uuid
 
 try:
     from . import holds
+    from . import patches as patching
     from .prompting import compose_prompt, compose_reference_prompt
 except ImportError:
     import holds
+    import patches as patching
     from prompting import compose_prompt, compose_reference_prompt
 
 FPS = 24
@@ -366,6 +368,22 @@ def project_loras(project, available=None, clip=None):
         if file and strength:
             rows.append((file, strength, max(0.0, min(1.0, float(start)))))
     return rows[:LORA_LIMIT]
+
+
+def project_patches(project, known=None):
+    """The model patches a render samples with, in order: (the project's row, the node's definition).
+
+    known maps the ids of the installed patch nodes to their definitions (patches.definition),
+    or is None when the installed nodes are not known. Only the patches that are switched on
+    and installed: a node's inputs and their defaults come from its definition, so without
+    one there is nothing to wire. A project file can be written by hand, so anything that is
+    not a patch row is passed over.
+    """
+    rows = []
+    for row in project.get("patches") or []:
+        if isinstance(row, dict) and isinstance(row.get("node"), str) and row.get("on") is not False and row["node"] in (known or {}):
+            rows.append((row, known[row["node"]]))
+    return rows[:PATCH_LIMIT]
 
 
 def lora_status(available):
@@ -828,10 +846,11 @@ def still_node(asset):
     return {"class_type": "H3LoadStill", "inputs": {"file": file}}
 
 
-def render_graph(project, folder, clip, take, quality, seed, available=None):
+def render_graph(project, folder, clip, take, quality, seed, available=None, patches=None):
     """One clip as a ComfyUI graph, saved as its own file in the project.
 
     available is the set of model files ComfyUI lists, used to find a profile's files.
+    patches is the installed patch nodes by id, as project_patches takes them.
     """
     if clip.get("kind") == "footage":
         raise ValueError("%s is imported footage. Extend or bridge it to generate from it" % clip.get("name", "this clip"))
@@ -909,6 +928,12 @@ def render_graph(project, folder, clip, take, quality, seed, available=None):
         if start < 1.0:
             # The LoRA sits out the first steps, which set the composition, and joins for the detail.
             graph[node]["inputs"]["start_sigma"] = start
+        model = [node, 0]
+    for n, (row, known) in enumerate(project_patches(project, patches)):
+        # The project's model patches, after every LoRA and before the shift, so both passes of a final sample
+        # with them. The editor knows nothing about what one does: it wires the node as its definition says.
+        node = str(PATCH_NODE + n)
+        graph[node] = {"class_type": known["node"], "inputs": dict(patching.values(row, known), **{known["model"]: model})}
         model = [node, 0]
     graph["5"]["inputs"]["model"] = model
     take_inputs = graph["10"]["inputs"]
@@ -1626,7 +1651,7 @@ MERGE_FRAMES = 63
 CLIP_FIELDS = ("name", "action", "camera", "speaker", "dialogue", "sound", "music", "seconds", "cast", "seed",
                "first", "last", "language", "track", "bin", "profile", "loras")
 TEXT_FIELDS = ("name", "action", "camera", "speaker", "dialogue", "sound", "music", "language")
-PROJECT_FIELDS = ("style", "format", "language", "profile", "loras", "realism", "checkpoints", "text_encoder", "text_projection", "vae", "audio_vae", "sizes")
+PROJECT_FIELDS = ("style", "format", "language", "profile", "loras", "patches", "realism", "checkpoints", "text_encoder", "text_projection", "vae", "audio_vae", "sizes")
 # The model files set_project names, and their keys in the project's models. A projection only
 # applies to a 4B or 8B text encoder; one that does not fit it gives way to one that does.
 PROJECT_MODEL_FIELDS = {**PROJECT_ENCODERS, "text_projection": "projection"}
@@ -1635,6 +1660,9 @@ LORA_LIMIT = 8
 LORA_RANGE = (-2.0, 2.0)
 REALISM_RANGE = (0.0, 3.0)
 LORA_NODE = 100
+# A project's model patches: how many, and where their nodes start in a render graph, clear of the LoRAs.
+PATCH_LIMIT = patching.LIMIT
+PATCH_NODE = 120
 CAST_FIELDS = ("name", "description", "voice", "pictures", "refmod")
 # A RefMod is a reference saved by the ComfyUI-MiniMaxH3Mod pack. The editor renders with one only
 # when that pack is installed: its loader takes this many, and the model list names each as refmod:<name>.
@@ -2332,6 +2360,36 @@ def clean_loras(value, owner="a project"):
     return rows
 
 
+def clean_patches(value):
+    """Model patches as an agent or the editor writes them.
+
+    Each is a node id, the values for that node's inputs, and whether it is on. Only the shape
+    is checked here: which nodes are installed, and what their inputs allow, is known when a
+    render is planned, so a project keeps a patch for a pack this machine does not have.
+    """
+    if not isinstance(value, list):
+        raise ValueError("patches must be a list of {node, inputs}")
+    if len(value) > PATCH_LIMIT:
+        raise ValueError("a project takes up to %s model patches" % PATCH_LIMIT)
+    rows = []
+    for row in value:
+        if not isinstance(row, dict) or not isinstance(row.get("node"), str) or not row["node"].strip():
+            raise ValueError("each patch needs node, a node's id as patches in GET /projects lists it")
+        unknown = sorted(set(row) - {"id", "node", "inputs", "on"})
+        if unknown:
+            raise ValueError("unknown patch fields: %s. Allowed: node, inputs, on" % ", ".join(unknown))
+        inputs = {} if row.get("inputs") is None else row["inputs"]
+        if not isinstance(inputs, dict) or any(not isinstance(name, str) or not isinstance(v, (str, int, float, bool))
+                                               for name, v in inputs.items()):
+            raise ValueError("a patch's inputs is {name: value}, each value a number, true or false, or text")
+        made = {"id": str(row.get("id") or new_id("p")), "node": row["node"].strip(), "inputs": dict(inputs),
+                "on": row.get("on") is not False}
+        if any(r["id"] == made["id"] for r in rows):
+            raise ValueError("two patches share the id %s" % made["id"])
+        rows.append(made)
+    return rows
+
+
 def clean_checkpoints(value, limit=CHECKPOINT_LIMIT):
     """A project's own checkpoints as an agent or the editor writes them.
 
@@ -2407,6 +2465,9 @@ def set_project(project, fields):
             continue
         if key == "loras":
             project["loras"] = clean_loras(value)
+            continue
+        if key == "patches":
+            project["patches"] = clean_patches(value)
             continue
         if key in PROJECT_MODEL_FIELDS:
             # A file as ComfyUI lists it, or None for the first one installed.
@@ -2665,11 +2726,16 @@ def render_models(graph):
     if "95" in graph:
         used["lora"] = graph["95"]["inputs"]["lora_name"]
         used["lora_strength"] = graph["95"]["inputs"]["strength"]
-    extra = [graph[n]["inputs"] for n in sorted((n for n in graph if n.isdigit() and int(n) >= LORA_NODE), key=int)
+    extra = [graph[n]["inputs"] for n in sorted((n for n in graph if n.isdigit() and LORA_NODE <= int(n) < PATCH_NODE), key=int)
              if graph[n]["class_type"] == "H3Lora"]
     if extra:
         used["loras"] = [dict({"file": i["lora_name"], "strength": i["strength"]},
                               **({"start_sigma": i["start_sigma"]} if "start_sigma" in i else {})) for i in extra]
+    wired = [graph[str(n)] for n in range(PATCH_NODE, PATCH_NODE + PATCH_LIMIT) if str(n) in graph]
+    if wired:
+        # Each patch with the values its node ran with, the defaults included. The model wire is not a value.
+        used["patches"] = [{"node": node["class_type"], "inputs": {name: v for name, v in node["inputs"].items() if not isinstance(v, list)}}
+                           for node in wired]
     return used
 
 
@@ -2817,8 +2883,11 @@ def plan_upscale(project, folder, clip_id, available=None, detail=None, upscaler
     return job, upscale_graph(folder, clip, take, source, name, files, detail)
 
 
-def plan_render(project, folder, clip_id, quality, seed=None, available=None, detail=None, upscaler=None):
-    """The graph for a new take, and the job that will turn its file into a take. detail and upscaler are for an upscale only."""
+def plan_render(project, folder, clip_id, quality, seed=None, available=None, detail=None, upscaler=None, patches=None):
+    """The graph for a new take, and the job that will turn its file into a take. detail and upscaler are for an upscale only.
+
+    patches is the installed patch nodes by id, as project_patches takes them.
+    """
     if quality == UPSCALE_QUALITY:
         return plan_upscale(project, folder, clip_id, available, detail, upscaler)
     clip = find_clip(project, clip_id)
@@ -2832,7 +2901,7 @@ def plan_render(project, folder, clip_id, quality, seed=None, available=None, de
     if seed in (None, ""):
         seed = random.randrange(2 ** 31)
     take = new_id("t")
-    graph = render_graph(project, folder, clip, take, quality, int(seed), available)
+    graph = render_graph(project, folder, clip, take, quality, int(seed), available, patches)
     job = {"clip": clip_id, "take": take, "quality": quality, "seed": int(seed),
            "saved": {k: copy.deepcopy(clip.get(k)) for k in SAVED_FIELDS},
            "models": dict(render_models(graph), profile=project_profile(project, available, clip)[0],
@@ -3216,6 +3285,8 @@ def describe(project):
                         for name, profile in profiles.items() if profile.get("custom")],
         "loras": [{"file": r["file"], "strength": r.get("strength", 1.0), "on": r.get("on") is not False}
                   for r in project.get("loras") or [] if isinstance(r, dict) and r.get("file")],
+        "patches": [{"node": r["node"], "inputs": r.get("inputs") or {}, "on": r.get("on") is not False}
+                    for r in project.get("patches") or [] if isinstance(r, dict) and isinstance(r.get("node"), str)],
         "frames": scene_end(project), "length": timecode(scene_end(project)), "fps": FPS,
         "cast": [{"id": p["id"], "name": p["name"], "description": p.get("description", ""),
                   "picture": bool(p.get("file")), "pictures": len(member_pictures(p)), "voice": bool(p.get("voice")),
