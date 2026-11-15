@@ -436,6 +436,40 @@ class SizeTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 set_project(project, {"sizes": wrong})
 
+    def test_a_size_of_the_projects_own_renders_as_written_and_is_recorded(self):
+        _, (job, graph) = self.planned("final", sizes={"final": "1024x576"})
+        self.assertEqual((graph["10"]["inputs"]["width"], graph["10"]["inputs"]["height"]), (1024, 576))
+        self.assertNotIn("91", graph)
+        self.assertEqual(job["size"], [1024, 576])
+        _, (job, graph) = self.planned("draft", sizes={"draft": "832x480"})
+        self.assertEqual((graph["10"]["inputs"]["width"], graph["10"]["inputs"]["height"]), (832, 480))
+        self.assertEqual(job["size"], [832, 480])
+
+    def test_a_size_of_its_own_may_have_another_shape_than_the_format(self):
+        project, (job, _) = self.planned("final", format="16:9", sizes={"final": "1344x576"})
+        self.assertEqual(job["size"], [1344, 576])
+        self.assertEqual(describe(project)["sizes"]["final"], {"width": 1344, "height": 576, "name": "1344x576"})
+
+    def test_a_size_of_its_own_is_tidied_however_it_was_typed(self):
+        project = new_project("x")
+        set_project(project, {"sizes": {"draft": " 1024 × 576 ", "final": "1280X704"}})
+        self.assertEqual(project["sizes"], {"draft": "1024x576", "final": "1280x704"})
+
+    def test_a_size_of_its_own_off_the_grid_or_out_of_range_is_refused(self):
+        project = new_project("x")
+        for wrong in ("1280x720", "1000x576", "224x224", "4096x2304", "1024", "1024x576x3", "x576", [1024, 576]):
+            with self.assertRaises(ValueError, msg=wrong) as raised:
+                set_project(project, {"sizes": {"final": wrong}})
+            self.assertIn("multiple of 32", str(raised.exception))
+        # One in a project file written by hand falls back to the usual size.
+        self.assertEqual(project_module.render_size({"sizes": {"final": "1280x720"}}, "final"), (1344, 768, True))
+
+    def test_the_editor_is_told_what_a_size_of_its_own_may_be(self):
+        for shape, table in project_module.size_choices().items():
+            own = table["own"]
+            self.assertEqual((own["step"], own["min"], own["max"]), (32, 256, 2048))
+            self.assertIsNotNone(project_module.own_size("%sx%s" % tuple(own["first"])))
+
     def test_a_size_the_editor_does_not_know_falls_back_to_the_usual_one(self):
         self.assertEqual(project_module.render_size({"sizes": {"final": "huge", "draft": 7}}, "final"), (1344, 768, True))
         self.assertEqual(project_module.render_size({"sizes": "small"}, "draft"), (640, 352, False))

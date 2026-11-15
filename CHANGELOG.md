@@ -5,6 +5,20 @@ What changed in each release of H3 Editor, newest first. Versions follow
 version can change how projects or the API behave, and the entry says so.
 Each release is a tag on GitHub, `v` followed by the version.
 
+## Unreleased
+
+### Added
+
+- **A size of your own.** **Draft size** and **Final size** in the Project tab
+  end with **Your own size**: any width and height from 256 to 2048 pixels,
+  each a multiple of 32, which H3's latent needs. What you type is moved to
+  the nearest one, and the editor shows the megapixels. It starts at 1024x576
+  (576x1024 for a vertical project), about 0.6 megapixels. A final at such a
+  size comes out as sampled, with no enlarging pass. The shape can differ from
+  the project's format, such as 1344x576: the cut and the export take the
+  shape of the largest picture on the timeline. Agents write the size as
+  `"1024x576"` in `set_project` `sizes`.
+
 ## 0.9.0, 2026-11-15
 
 ### Added

@@ -3264,6 +3264,14 @@ function sizeChoices() {
   const names = { small: "Small", medium: "Medium", large: "Large", full: "Full", sharp: "Sharp" };
   // A sharp final goes through RelayVSR, so it is on offer only where that is installed.
   const relay = (state.upscalers || []).find((row) => row.id === "relayvsr");
+  // A size of the project's own is written "1024x576": what the server takes, checked the same way.
+  const own = table.own;
+  const ownSize = (name) => {
+    const found = own && typeof name === "string" ? /^(\d+)x(\d+)$/.exec(name) : null;
+    if (!found) return null;
+    const sides = [Number(found[1]), Number(found[2])];
+    return sides.every((side) => side >= own.min && side <= own.max && side % own.step === 0) ? sides : null;
+  };
   const choice = (quality, title) => {
     const label = document.createElement("label");
     label.className = "choice";
@@ -3272,7 +3280,8 @@ function sizeChoices() {
     const select = document.createElement("select");
     select.dataset.key = title;
     const usual = table[quality][0].id;
-    const current = table[quality].some((row) => row.id === state.project.sizes?.[quality]) ? state.project.sizes[quality] : usual;
+    const mine = ownSize(state.project.sizes?.[quality]);
+    const current = mine ? "own" : table[quality].some((row) => row.id === state.project.sizes?.[quality]) ? state.project.sizes[quality] : usual;
     for (const row of table[quality]) {
       const option = document.createElement("option");
       option.value = row.id;
@@ -3284,16 +3293,61 @@ function sizeChoices() {
       }
       select.append(option);
     }
-    select.addEventListener("change", () => {
+    const ownOption = document.createElement("option");
+    if (own) {
+      ownOption.value = "own";
+      // The boxes under the menu show the numbers: the menu is too narrow for both.
+      ownOption.textContent = "Your own size";
+      ownOption.selected = !!mine;
+      select.append(ownOption);
+    }
+    const setSize = (value) => {
       checkpoint();
       const sizes = { ...(state.project.sizes || {}) };
-      if (select.value === usual) delete sizes[quality];
-      else sizes[quality] = select.value;
+      if (value === usual) delete sizes[quality];
+      else sizes[quality] = value;
       if (Object.keys(sizes).length) state.project.sizes = sizes;
       else delete state.project.sizes;
       save();
+    };
+    select.addEventListener("change", () => {
+      // The first size of one's own is the one the server suggests for this shape.
+      setSize(select.value === "own" ? own.first.join("x") : select.value);
+      // The width and height boxes come and go with the choice.
+      if (mine || select.value === "own") renderInspector();
     });
     label.append(name, select);
+    if (!mine) return label;
+    const sides = document.createElement("div");
+    sides.className = "own-size";
+    const note = document.createElement("span");
+    const says = (size) => {
+      const format = (state.project.format || "16:9").split(":").map(Number);
+      const off = Math.abs(size[0] / size[1] - format[0] / format[1]) > 0.04;
+      note.textContent = (size[0] * size[1] / 1e6).toFixed(2) + " megapixels" + (off ? ", not " + (state.project.format || "16:9") : "");
+    };
+    const boxes = mine.map((side, n) => {
+      const box = document.createElement("input");
+      box.type = "number";
+      box.min = own.min;
+      box.max = own.max;
+      box.step = own.step;
+      box.value = side;
+      box.setAttribute("aria-label", title + (n ? ", height" : ", width"));
+      box.addEventListener("change", () => {
+        // Onto the grid H3 needs, whatever was typed.
+        const size = boxes.map((b) => Math.min(own.max, Math.max(own.min, Math.round((Number(b.value) || 0) / own.step) * own.step)));
+        boxes.forEach((b, i) => { b.value = size[i]; });
+        says(size);
+        setSize(size.join("x"));
+      });
+      return box;
+    });
+    const times = document.createElement("span");
+    times.textContent = "×";
+    sides.append(boxes[0], times, boxes[1]);
+    says(mine);
+    label.append(sides, note);
     return label;
   };
   const hint = document.createElement("p");
@@ -3305,6 +3359,8 @@ function sizeChoices() {
     + (sharp ? " Sharp samples at the same size once, enlarges the picture two times with RelayVSR and scales it down to "
       + sharp.out[0] + " × " + sharp.out[1] + ": quicker than Full, with crisper edges and the smoother skin of the sampled size."
       + (relay && !relay.installed ? " It needs " + relay.missing.join(" and ") + " from " + relay.source + " on Hugging Face." : "") : "")
+    + (own ? " Your own size takes any width and height from " + own.min + " to " + own.max + " in steps of " + own.step
+      + ", and comes out as sampled." : "")
     + " Steps are set per model, in Models and their settings.";
   const pair = document.createElement("div");
   pair.className = "pair";

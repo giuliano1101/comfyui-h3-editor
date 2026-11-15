@@ -51,6 +51,12 @@ SIZES = {
     "1:1": {"small": (480, 480), "medium": (768, 768), "large": (1024, 1024)},
 }
 SIZE_CHOICES = {"draft": ("small", "medium"), "final": ("full", "sharp", "large", "medium", "small")}
+# A project can also write a size of its own, as "1024x576", for a draft or a final. Each side
+# is a multiple of 32, which H3's latent needs, in this range, and the picture comes out as
+# sampled. Any shape goes: the cut takes the shape of its largest picture.
+SIDE_STEP, SIDE_MIN, SIDE_MAX = 32, 256, 2048
+# What the editor offers first when someone asks for a size of their own: about 0.6 megapixels.
+OWN_SIZES = {"16:9": (1024, 576), "9:16": (576, 1024), "1:1": (768, 768)}
 # A sharp final is enlarged two times by this upscaler, keeping all the detail it adds, and
 # scaled down to the refine size. H3 is not asked to draw at a size it was not made for, so
 # skin stays as it is at H3's own size, and the edges come out crisper than a redraw gives.
@@ -80,15 +86,27 @@ def render_size(project, quality):
         return FORMATS[shape]["final"] + (True,)
     if name == SHARP:
         return FORMATS[shape]["final"] + (False,)
-    return SIZES[shape][name] + (False,)
+    return (own_size(name) or SIZES[shape][name]) + (False,)
+
+
+def own_size(name):
+    """Width and height of a size written as "1024x576", or None when it is not one a render can use."""
+    found = re.fullmatch(r"(\d{1,5})x(\d{1,5})", name) if isinstance(name, str) else None
+    if not found:
+        return None
+    sides = int(found.group(1)), int(found.group(2))
+    return sides if all(SIDE_MIN <= side <= SIDE_MAX and side % SIDE_STEP == 0 for side in sides) else None
 
 
 def size_name(project, quality):
-    """The name of the size a new render of this quality uses: the project's choice, or the usual one."""
+    """The name of the size a new render of this quality uses: the project's choice, or the usual one.
+
+    A size of the project's own is its name, "1024x576".
+    """
     quality = "draft" if quality == "draft" else "final"
     chosen = project.get("sizes")
     name = chosen.get(quality) if isinstance(chosen, dict) else None
-    return name if name in SIZE_CHOICES[quality] else SIZE_CHOICES[quality][0]
+    return name if name in SIZE_CHOICES[quality] or own_size(name) else SIZE_CHOICES[quality][0]
 
 
 def size_choices():
@@ -103,6 +121,8 @@ def size_choices():
                 rows.append({"id": name, "width": width, "height": height,
                              "out": list(FORMATS[shape]["refine"] if refined or name == SHARP else (width, height))})
             table[shape][quality] = rows
+        # What a size of the project's own may be, and the one to offer first.
+        table[shape]["own"] = {"step": SIDE_STEP, "min": SIDE_MIN, "max": SIDE_MAX, "first": list(OWN_SIZES[shape])}
     return table
 
 
@@ -2474,8 +2494,16 @@ def clean_sizes(value):
     for quality, name in value.items():
         if name is None:
             continue
+        if isinstance(name, str) and name not in SIZE_CHOICES[quality]:
+            # A size of the project's own, however it was typed: "1024 × 576", "1024X576".
+            written = re.sub(r"\s+", "", name).lower().replace("×", "x").replace("*", "x")
+            if own_size(written):
+                chosen[quality] = written
+                continue
         if name not in SIZE_CHOICES[quality]:
-            raise ValueError("the %s size must be one of %s" % (quality, ", ".join(SIZE_CHOICES[quality])))
+            raise ValueError("the %s size must be one of %s, or a size of its own such as \"1024x576\": "
+                             "each side a multiple of %s from %s to %s"
+                             % (quality, ", ".join(SIZE_CHOICES[quality]), SIDE_STEP, SIDE_MIN, SIDE_MAX))
         if name != SIZE_CHOICES[quality][0]:
             chosen[quality] = name
     return chosen
@@ -3302,8 +3330,7 @@ def describe(project):
         "format": project.get("format") or "16:9", "language": project.get("language") or LANGUAGE,
         "profile": project_profile(project)[0],
         "sizes": {quality: dict(zip(("width", "height"), render_size(project, quality)[:2]),
-                                name=(project.get("sizes") or {}).get(quality) if isinstance(project.get("sizes"), dict)
-                                and (project.get("sizes") or {}).get(quality) in SIZE_CHOICES[quality] else SIZE_CHOICES[quality][0])
+                                name=size_name(project, quality))
                   for quality in SIZE_CHOICES},
         "checkpoints": [{"id": name, "title": profile["title"], "unet": profile["unet"][0], "steps": profile["steps"],
                          "sampler": profile["sampler"], "scheduler": profile.get("scheduler") or "simple"}

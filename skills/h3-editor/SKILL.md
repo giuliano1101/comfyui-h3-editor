@@ -263,7 +263,8 @@ Renders queue on the user's GPU one at a time. Measured with the models loaded:
   takes around 4.5 minutes;
 - on a GPU with less memory, or when the user wants speed over size, a project can render
   smaller: `set_project` `sizes`, such as `{"final": "large"}` for finals that are not
-  enlarged (the reference lists the choices). Ask before changing it: it changes what the
+  enlarged, or a size of its own such as `{"final": "1024x576"}` (the reference lists the
+  choices). Renders are always 24 frames a second. Ask before changing it: it changes what the
   cut looks like;
 - `{"final": "sharp"}` gives finals of the same size as the usual ones by another route: the
   picture is sampled once at 1344x768, enlarged two times with RelayVSR and scaled down. It is

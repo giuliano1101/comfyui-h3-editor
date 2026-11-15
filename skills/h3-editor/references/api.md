@@ -250,9 +250,12 @@ every clip to it.
 `{"draft": "medium", "final": "large"}`. A draft is `small` (the usual) or `medium`. A final is
 `full` (the usual: sampled large, then enlarged by redrawing its last steps at the larger size),
 `sharp` (sampled large once, enlarged two times with RelayVSR and scaled down to the same size as
-`full`; it needs RelayVSR's two files), `large`, `medium` or `small`, which come out as sampled. Leave a quality out, or send `null`, for the usual size. `GET /projects` lists
+`full`; it needs RelayVSR's two files), `large`, `medium` or `small`, which come out as sampled. Either can also be a size of the
+project's own, written `"1024x576"`: each side a multiple of 32 from 256 to 2048, any shape,
+and it comes out as sampled. A size off that grid is refused. Leave a quality out, or send `null`, for the usual size. `GET /projects` lists
 every choice per format under `sizes`, with `width`, `height` and the size it comes out at,
-`out`. The summary's `sizes` says what the project renders at.
+`out`, and under `own` what a size of the project's own may be (`step`, `min`, `max`) with
+one to start from, `first`. The summary's `sizes` says what the project renders at.
 
 `set_project` also takes `loras`, the LoRAs every new render of the project samples with,
 drafts and finals alike, and `realism`:

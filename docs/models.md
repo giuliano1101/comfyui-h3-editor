@@ -105,6 +105,20 @@ A final at Large, Medium or Small is not enlarged, so it loads no upscaler and
 samples once. The Realism Slider still runs on it. Takes already rendered keep
 their size.
 
+**Your own size**, the last choice in both menus, takes any width and height
+from 256 to 2048 pixels, for a draft or a final. Each side is a multiple of 32,
+which H3's latent needs, and what you type is moved to the nearest one: 1280 by
+720 becomes 1280 by 736. The editor starts you at 1024x576 (576x1024 for a
+vertical project), about 0.6 megapixels, between Medium and Large. A final at a
+size of your own comes out as sampled, like Large. The size can have another
+shape than the project's format, such as 1344x576 for a wider picture: the
+editor says so under the boxes, and the cut and the export take the shape of
+the largest picture on the timeline, with every other clip filling it. H3 was
+trained near one megapixel, so far above or below that the picture can suffer.
+
+Every render is 24 frames a second, whatever its size: H3 makes picture and
+sound together at that rate, and it has no setting for another.
+
 A Sharp final samples once at Large, is enlarged two times by RelayVSR (see
 below) and is scaled down to the Full size. It skips the second sampling pass,
 so it is quicker, edges come out crisper and skin keeps the smoother look of
