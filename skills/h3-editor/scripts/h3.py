@@ -278,6 +278,18 @@ def main():
             for cut in sorted(found["cuts"], key=lambda x: 101 if x["score"] is None else x["score"]):
                 print("%4s  %-12s at frame %-6d %s > %s  %s" % ("-" if cut["score"] is None else cut["score"], cut["kind"], cut["at"],
                                                               cut["before"], cut["after"], "; ".join(cut["notes"])))
+                moved = cut.get("movement")
+                if moved and moved["notes"]:
+                    print("%4s  %-12s at frame %-6d %s > %s  %s" % ("-" if moved["score"] is None else moved["score"], "move: " + moved["kind"], cut["at"],
+                                                                  cut["before"], cut["after"], "; ".join(moved["notes"])))
+                parts = cut.get("parts")
+                if parts and parts["notes"]:
+                    print("%4s  %-12s at frame %-6d %s > %s  %s" % ("-" if parts["score"] is None else parts["score"], "parts: " + parts["kind"], cut["at"],
+                                                                  cut["before"], cut["after"], "; ".join(parts["notes"])))
+                heard = cut.get("sound")
+                if heard and heard["kind"] not in ("continuous", "silent"):
+                    print("%4s  %-12s at frame %-6d %s > %s  %s" % (heard["score"], "sound: " + heard["kind"], cut["at"], cut["before"], cut["after"],
+                                                                  "; ".join(heard["notes"])))
             for cut in found.get("effects") or []:
                 print("%4s  %-12s at frame %-6d %s of VFX clip %s  %s" % ("-" if cut["score"] is None else cut["score"], cut["kind"], cut["at"],
                                                                          "into the start" if cut["edge"] == "start" else "out of the end",
@@ -286,6 +298,12 @@ def main():
                 span = " for %d frames" % row["length"] if row.get("length") else ""
                 print("%4s  %-14s at frame %-6d inside %s, frame %d of its take%s  %s" % (row["score"], "inside: " + row["kind"], row["at"], row["item"],
                                                                                         row["frame"], span, "; ".join(row["notes"])))
+            for row in found.get("sound_inside") or []:
+                print("%4s  %-14s at frame %-6d inside %s, frame %d of its take  %s" % (row["score"], "sound: " + row["kind"], row["at"], row["item"],
+                                                                                        row["frame"], "; ".join(row["notes"])))
+            for row in found.get("arrivals") or []:
+                if row["kind"] != "arrives":
+                    print("%4s  %-14s at frame %-6d %s  %s" % (row["score"], "arrival", row["at"], row["item"], "; ".join(row["notes"])))
             print("worst: %s" % found["worst"])
     elif c == "detail":
         found = api("GET", project_path(args.project) + "/detail")

@@ -121,6 +121,27 @@ class FileTest(unittest.TestCase):
         holds.save(self.path, take(124).tensors[0])
         self.assertNotIn("audio", holds.part(self.path, 0, 39, 124))
 
+    def test_a_refined_final_is_saved_at_both_sizes(self):
+        holds.save(self.path, take(124), take(124, height=4, width=6))
+        saved = safetensors.torch.load_file(self.path)
+        self.assertEqual(tuple(saved["video"].shape), (1, 4, 37, 2, 3))
+        self.assertEqual(tuple(saved["final"].shape), (1, 4, 37, 4, 6))
+
+    def test_a_part_of_a_refined_final_comes_back_at_both_sizes(self):
+        holds.save(self.path, take(124), take(124, height=4, width=6))
+        held = holds.part(self.path, 85, 124, 124)
+        self.assertEqual(tuple(held["samples"].shape), (1, 4, 12, 2, 3))
+        self.assertEqual(tuple(held["final"].shape), (1, 4, 12, 4, 6))
+        self.assertEqual(held["final"][0, 0, :, 0, 0].tolist(), [float(n) for n in range(25, 37)])
+
+    def test_a_draft_has_no_refined_latent(self):
+        holds.save(self.path, take(124))
+        self.assertNotIn("final", holds.part(self.path, 85, 124, 124))
+
+    def test_a_refined_latent_of_another_length_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not the same take"):
+            holds.save(self.path, take(124), take(141, height=4, width=6))
+
     def test_files_from_before_whole_takes_are_still_read(self):
         video = take(124).tensors[0]
         os.makedirs(os.path.dirname(self.path))
@@ -149,6 +170,12 @@ class HeldTest(unittest.TestCase):
         self.assertIsNone(holds.held_picture(held, 12, 1088, 1920))
         self.assertIsNone(holds.held_picture(held, 7, 352, 640))
         self.assertIsNone(holds.held_picture(None, 12, 352, 640))
+
+    def test_each_pass_of_a_final_holds_the_latent_of_its_own_size(self):
+        held = {"samples": torch.zeros(1, 4, 12, 48, 84), "final": torch.ones(1, 4, 12, 68, 120)}
+        self.assertEqual(holds.held_picture(held, 12, 768, 1344).max().item(), 0.0)
+        self.assertEqual(holds.held_picture(held, 12, 1088, 1920).min().item(), 1.0)
+        self.assertIsNone(holds.held_picture(held, 12, 352, 640))
 
     def test_sound_of_the_right_ticks_is_held(self):
         held = {"samples": torch.ones(1, 4, 12, 22, 40), "audio": torch.ones(1, 8, 2, 65)}

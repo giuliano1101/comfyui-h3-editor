@@ -307,10 +307,20 @@ function placeOnTimeline(clip, start) {
 const HOLD = 39;
 const JOINT = 51;
 
+// Mirrors arrives_on_pin in project.py. A bridge reaches the next clip on its first frame, pinned as the bridge's
+// own last frame, unless it was made to hold the next clip's first frames. H3 moves into a pinned frame in one
+// shot, and cuts to a run of held frames; holding suits a next clip that starts in mid-movement.
+const arrivesOnPin = (link) => Boolean(link) && link.mode === "bridge" && link.arrive === "pin";
+// Mirrors END_HOLD and end_hold in project.py: a bridge holds a short run of the next clip, picture and sound.
+const END_HOLD = 22;
+const endHold = (link) => link.end_hold || link.hold;
+
 // Mirrors linked_length in project.py.
 function linkedFrames(link, seconds) {
   const frames = seconds * FPS;
-  if (link.mode === "bridge") return link.hold + JOINT * Math.max(2, Math.round((frames + link.hold) / JOINT));
+  if (link.mode === "bridge" && !arrivesOnPin(link)) {
+    return link.hold + JOINT * Math.max(endHold(link) === link.hold ? 2 : 1, Math.round((frames + endHold(link)) / JOINT));
+  }
   return link.hold + JOINT * Math.max(1, Math.round(frames / JOINT));
 }
 
@@ -327,7 +337,9 @@ function linkedRange(link, frames) {
   const over = handoverOf(link);
   if (link.mode === "extend_after") return [link.hold - over, frames];
   if (link.mode === "extend_before") return [0, frames - link.hold + over];
-  return [link.hold - over, frames - link.hold + over];
+  // The last frame of a bridge that arrives on a pin is the next clip's own first frame, which that clip shows.
+  if (arrivesOnPin(link)) return [link.hold - over, frames - 1];
+  return [link.hold - over, frames - endHold(link) + over];
 }
 
 // A clip on the timeline shows a window of its take. Slipping slides the take under that window:
@@ -375,6 +387,7 @@ const isTail = (link, key) => key === "a" && link.mode !== "extend_before";
 function sideCut(link, key) {
   const side = link[key];
   const over = handoverOf(link);
+  if (key === "b" && arrivesOnPin(link)) return ["in", side.first];
   return isTail(link, key) ? ["out", side.last - over] : ["in", side.first + over];
 }
 
@@ -409,8 +422,12 @@ function selectedRendered() {
   return item && activeTake(clipOf(item.clip)) ? item : null;
 }
 
-function bridgeable(item, next) {
-  return Boolean(item && next && activeTake(clipOf(item.clip)) && activeTake(clipOf(next.clip)) && itemLength(item) >= HOLD && itemLength(next) >= HOLD);
+// A bridge needs a rendered clip after it with the frames it will hold: 22 of them, or 39 for one that holds as many
+// as of the first clip.
+function bridgeable(item, next, arrive = "short") {
+  const need = arrive === "hold" ? HOLD : arrive === "pin" ? 1 : END_HOLD;
+  return Boolean(item && next && activeTake(clipOf(item.clip)) && activeTake(clipOf(next.clip)) && itemLength(item) >= HOLD
+    && itemLength(next) >= need);
 }
 
 function updateTools() {
@@ -420,6 +437,7 @@ function updateTools() {
   $("extendBack").disabled = !holdable;
   $("extendForward").disabled = !holdable;
   $("bridge").disabled = !bridgeable(item, next);
+  $("bridgeHold").disabled = !bridgeable(item, next, "hold");
   $("merge").disabled = !(item && next && activeTake(clipOf(next.clip)) && next.start === itemEnd(item));
   $("remove").disabled = !(state.item || state.gap || state.sound || state.effect);
   $("ripple").disabled = !state.item;
@@ -489,24 +507,34 @@ function joinSide(link, key, item, snap = true) {
   const tail = isTail(link, key);
   const snaps = snap && clipOf(item.clip).kind !== "footage";
   const side = sideOf(item);
+  if (key === "b" && arrivesOnPin(link)) {
+    // The next clip stays cut where it is: its first frame is the pin.
+    link[key] = side;
+    return side;
+  }
   if (tail) side.last = snaps ? snapOut(item.out, HOLD, item.in) : item.out;
-  else side.first = snaps ? snapIn(item.in, HOLD, item.out) : item.in;
+  else side.first = snaps ? snapIn(item.in, key === "b" ? endHold(link) : HOLD, item.out) : item.in;
   link[key] = side;
   moveCut(item, ...sideCut(link, key));
   return side;
 }
 
-function addLinked(mode) {
+// arrive is how a bridge reaches the next clip: "short", on a short run of its first frames, "pin", on its first
+// frame alone, or "hold", on as many frames as it holds of the first clip.
+function addLinked(mode, arrive = "short") {
   const item = selectedRendered();
   if (!item) return;
   const source = clipOf(item.clip);
   const next = followingItem(item);
-  const seconds = 4.25;
+  const link = { mode, hold: HOLD, handover: HANDOVER };
+  if (mode === "bridge" && arrive === "pin") link.arrive = "pin";
+  else if (mode === "bridge" && arrive !== "hold") Object.assign(link, { arrive: "short", end_hold: END_HOLD });
+  // Mirrors BRIDGE_SECONDS in project.py: a move between two framings needs room, or H3 dissolves or cuts instead.
+  const seconds = link.arrive ? 6.375 : 4.25;
   const cuts = snappedCuts(item, mode, mode === "bridge" ? next : null);
-  const track = continuedTrack(source, { ...item, in: cuts.in }, mode, linkedFrames({ mode, hold: HOLD }, seconds), cuts.out);
+  const track = continuedTrack(source, { ...item, in: cuts.in }, mode, linkedFrames(link, seconds), cuts.out);
   if (track === false) return;
   checkpoint();
-  const link = { mode, hold: HOLD, handover: HANDOVER };
   joinSide(link, "a", item);
   if (mode === "bridge") joinSide(link, "b", next);
   const titles = { extend_after: "After ", extend_before: "Before ", bridge: "Bridge from " };
@@ -4376,7 +4404,7 @@ let cutsAsked = "";
 let cutsTimer = null;
 
 // What else the server's cut scores hold: the cuts into and out of VFX clips, and takes that change picture inside.
-const cutExtras = { effects: [], inside: [] };
+const cutExtras = { effects: [], inside: [], soundInside: [], arrivals: [] };
 
 function cutMark(frame, score, title, act) {
   const mark = document.createElement("button");
@@ -4403,6 +4431,42 @@ function findings() {
     seek(frame);
     renderAll();
   };
+  // What a cut sounds like, how the camera's move carries across it, and what stops or starts moving inside the frame.
+  // Each is scored by itself (see listen.py and cuts.py), so a cut that looks clean can still be listed here.
+  const beside = [
+    ["sound", (row) => ({ "level jump": "Sound jumps", dropout: "Sound drops out", "new sound": "Sound changes" }[row.kind] || "Sound")],
+    ["movement", () => "Camera move breaks"],
+    ["parts", () => "Movement breaks"],
+  ];
+  for (const cut of touchingCuts()) {
+    const scored = cutScores.get(cut.key);
+    if (!scored) continue;
+    for (const [key, title] of beside) {
+      const row = scored[key];
+      if (!row || row.score === null || row.score === undefined || row.score >= CUT_FINE) continue;
+      found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: cut.after.start,
+        title: title(row) + ", " + clipOf(cut.before.clip).name + " to " + clipOf(cut.after.clip).name,
+        detail: row.notes.join(", ") || row.kind, act: () => { jumpTo(cut.before, cut.after.start - 1)(); } });
+    }
+  }
+  for (const row of cutExtras.arrivals) {
+    const item = state.project.timeline.find((i) => i.id === row.item);
+    if (!item || activeTake(clipOf(item.clip))?.id !== row.take || row.kind === "arrives" || row.score >= CUT_FINE) continue;
+    const at = itemEnd(item);
+    found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: at,
+      title: clipOf(item.clip).name + " does not arrive on the next clip", detail: row.notes.join(", "), act: jumpTo(item, at - 1) });
+  }
+  for (const row of cutExtras.soundInside) {
+    const item = state.project.timeline.find((i) => i.id === row.item);
+    if (!item || activeTake(clipOf(item.clip))?.id !== row.take) continue;
+    const name = clipOf(item.clip).name;
+    const title = { chop: " has its sound cut off", dropout: " loses its sound", swell: " ends much louder than it begins",
+      fade: " ends much quieter than it begins" }[row.kind];
+    if (!title) continue;
+    // A sound cut off is a guess from the level alone, so it asks for a listen. A hole in the sound is certain.
+    found.push({ sev: row.kind === "dropout" ? "bad" : "warn", badge: "Sound", word: true, frame: row.at, title: name + title,
+      detail: row.notes.join(", "), act: jumpTo(item, row.at) });
+  }
   for (const cut of touchingCuts()) {
     const row = cutScores.get(cut.key);
     if (!row || row.score === null || row.score >= CUT_FINE) continue;
@@ -4478,7 +4542,7 @@ function renderChecks() {
   if (bad) parts.push(bad + " to fix");
   if (warn) parts.push(warn + " to check");
   chip.textContent = parts.length ? parts.join(", ") + (checked() ? "" : ", checking") : checked() ? "Checks clear" : "Checking";
-  chip.title = found.length ? "What the checks found in this cut" : "Cuts, soft clips, drift and takes that stop moving are checked as clips render";
+  chip.title = found.length ? "What the checks found in this cut" : "Cuts, their sound and movement, bridges, soft clips, drift and takes that stop moving are checked as clips render";
   $("checksSummary").textContent = found.length ? found.length + " found" : "";
   if (!$("checksPanel").matches(":popover-open")) return;
   $("checksList").replaceChildren(...(found.length ? found.map(checkRow) : [Object.assign(document.createElement("p"), {
@@ -4573,6 +4637,8 @@ function refreshCutScores() {
       }
       cutExtras.effects = reply.effects || [];
       cutExtras.inside = reply.inside || [];
+      cutExtras.soundInside = reply.sound_inside || [];
+      cutExtras.arrivals = reply.arrivals || [];
       checksFor = folder;
       renderTimeline();
     } catch (_) {
@@ -6130,6 +6196,7 @@ function itemActions(item) {
     act("Extend forward", () => addLinked("extend_after"), { off: holdable ? "" : "Render it first; it needs " + HOLD + " frames to carry on from" }),
     act("Extend back", () => addLinked("extend_before"), { off: holdable ? "" : "Render it first; it needs " + HOLD + " frames to carry on from" }),
     act("Bridge to next", () => addLinked("bridge"), { off: bridgeable(item, next) ? "" : "Needs a rendered clip after it" }),
+    act("Bridge into its movement", () => addLinked("bridge", "hold"), { off: bridgeable(item, next, "hold") ? "" : "Needs a rendered clip after it, with " + HOLD + " frames on the timeline" }),
     act("Merge with next", mergeWithNext, { off: next && activeTake(clipOf(next.clip)) && next.start === itemEnd(item) ? "" : "Needs a rendered clip right after it" }),
     "-",
     act("Split at the playhead", splitAtPlayhead, { key: "S", off: inside ? "" : "Move the playhead over this clip" }),
@@ -6885,6 +6952,7 @@ async function openProject(folder) {
   await flush();
   state.folder = folder;
   state.project = await api("/project/" + folder);
+  drawProjectPicker();
   state.edits = state.savedEdits = 0;
   state.clip = null;
   state.item = null;
@@ -6903,7 +6971,7 @@ async function openProject(folder) {
 }
 
 async function refreshProjects(selected) {
-  const { projects, titles, profiles, finals, loras, realism, checkpoints, samplers, schedulers, presets, refmods, encoders, sizes, upscalers, catalog } = await api("/projects");
+  const { projects, titles, cards, profiles, finals, loras, realism, checkpoints, samplers, schedulers, presets, refmods, encoders, sizes, upscalers, catalog } = await api("/projects");
   state.encoders = encoders || { text_encoders: [], vaes: [], auto: {}, missing: [] };
   state.presets = presets || [];
   state.refmods = refmods || { installed: false, files: [] };
@@ -6919,15 +6987,168 @@ async function refreshProjects(selected) {
   state.sizes = sizes || null;
   state.upscalers = upscalers || [];
   state.catalog = catalog || [];
-  $("project").replaceChildren(...projects.map((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = titles?.[name] || name.replaceAll("_", " ");
-    option.selected = name === selected;
-    return option;
-  }));
+  state.projects = projects;
+  state.titles = titles || {};
+  state.cards = cards || {};
+  drawProjectPicker();
   return projects;
 }
+
+// The project picker. The button in the top bar names the open project and shows a frame of it. Its list has every
+// project with a frame, its shape, how many clips are on its timeline, how long it runs and when it last changed,
+// the open one first and then the last changed, and narrows as a name is typed.
+const projectPick = { shown: [], at: -1 };
+const titleOf = (folder) => state.titles?.[folder] || folder.replaceAll("_", " ");
+
+function runningTime(frames) {
+  const seconds = Math.round(frames / FPS);
+  return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+}
+
+function sinceChange(when) {
+  if (!when) return "";
+  const gone = Math.max(0, Date.now() / 1000 - when);
+  if (gone < 90) return "just now";
+  if (gone < 3600) return Math.round(gone / 60) + " min ago";
+  if (gone < 86400) return Math.round(gone / 3600) + " h ago";
+  if (gone < 86400 * 2) return "yesterday";
+  if (gone < 86400 * 14) return Math.floor(gone / 86400) + " days ago";
+  return new Date(when * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", ...(gone > 86400 * 300 ? { year: "numeric" } : {}) });
+}
+
+function projectFacts(card) {
+  const facts = [card.format || "16:9"];
+  if (card.clips) facts.push(card.clips + (card.clips === 1 ? " clip" : " clips"), runningTime(card.frames || 0));
+  else facts.push("No clips yet");
+  return facts;
+}
+
+function projectRow(folder, index) {
+  const card = state.cards?.[folder] || {};
+  const current = folder === state.folder;
+  const row = document.createElement("div");
+  row.className = "project-row";
+  row.id = "projectRow" + index;
+  row.dataset.folder = folder;
+  row.setAttribute("role", "option");
+  row.setAttribute("aria-selected", String(current));
+  const shot = document.createElement("span");
+  shot.className = "project-shot";
+  if (card.picture) {
+    const frame = document.createElement("img");
+    frame.alt = "";
+    frame.loading = "lazy";
+    frame.decoding = "async";
+    frame.addEventListener("error", () => { frame.remove(); shot.classList.add("empty"); });
+    frame.src = viewUrl(card.picture.file, card.picture.subfolder);
+    shot.append(frame);
+  } else shot.classList.add("empty");
+  const text = document.createElement("span");
+  text.className = "project-text";
+  const title = document.createElement("span");
+  title.className = "project-title";
+  const name = document.createElement("b");
+  name.textContent = titleOf(folder);
+  title.append(name);
+  if (current) title.insertAdjacentHTML("beforeend", '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>');
+  const facts = document.createElement("span");
+  facts.className = "project-facts";
+  for (const fact of projectFacts(card)) facts.append(Object.assign(document.createElement("span"), { textContent: fact }));
+  if (card.rendering) facts.append(Object.assign(document.createElement("span"), { className: "project-live", textContent: "Rendering" }));
+  text.append(title, facts);
+  const when = Object.assign(document.createElement("span"), { className: "project-when", textContent: sinceChange(card.changed) });
+  row.append(shot, text, when);
+  row.setAttribute("aria-label", [titleOf(folder), current ? "open now" : "", ...projectFacts(card), card.rendering ? "rendering" : "",
+    when.textContent ? "changed " + when.textContent : ""].filter(Boolean).join(", "));
+  return row;
+}
+
+// Marks one row as the one Enter opens. The field keeps the keyboard, so the row is named to it instead of focused.
+function markProject(index, scroll = true) {
+  const rows = [...$("projectRows").querySelectorAll(".project-row")];
+  projectPick.at = rows.length ? Math.max(0, Math.min(index, rows.length - 1)) : -1;
+  rows.forEach((row, i) => row.classList.toggle("active", i === projectPick.at));
+  const row = rows[projectPick.at];
+  if (row) $("projectFind").setAttribute("aria-activedescendant", row.id);
+  else $("projectFind").removeAttribute("aria-activedescendant");
+  if (row && scroll) row.scrollIntoView({ block: "nearest" });
+}
+
+// `keep` is the folder to leave marked, for a list drawn again under the pointer; otherwise the open project is marked.
+function fillProjects(keep = null) {
+  const typed = $("projectFind").value.trim().toLowerCase();
+  // The open project leads, so the list opens at its top with the ones worked on lately right under it.
+  const all = [...(state.projects || [])].sort((a, b) => (b === state.folder) - (a === state.folder)
+    || (state.cards?.[b]?.changed || 0) - (state.cards?.[a]?.changed || 0) || titleOf(a).localeCompare(titleOf(b)));
+  projectPick.shown = typed ? all.filter((folder) => titleOf(folder).toLowerCase().includes(typed) || folder.toLowerCase().includes(typed)) : all;
+  const rows = projectPick.shown.map(projectRow);
+  $("projectRows").replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement("p"), { className: "project-none",
+    textContent: "No project has that in its name." })]));
+  $("projectCount").textContent = typed ? projectPick.shown.length + " of " + all.length : all.length + (all.length === 1 ? " project" : " projects");
+  projectPick.drawn = projectsRead();
+  const marked = projectPick.shown.indexOf(keep || (typed ? null : state.folder));
+  markProject(Math.max(0, marked), !keep);
+}
+
+const projectsRead = () => JSON.stringify([state.folder, state.projects, state.titles, state.cards]);
+
+function drawProjectPicker() {
+  const card = state.cards?.[state.folder];
+  $("projectName").textContent = state.folder ? titleOf(state.folder) : "";
+  $("projectShot").classList.toggle("empty", !card?.picture);
+  $("projectShot").style.backgroundImage = card?.picture ? 'url("' + viewUrl(card.picture.file, card.picture.subfolder) + '")' : "";
+  // An open list is drawn again only when what it shows changed, so its pictures do not blink.
+  if ($("projectList").matches(":popover-open") && projectPick.drawn !== projectsRead()) fillProjects(projectPick.shown[projectPick.at]);
+}
+
+function pickProject(folder) {
+  $("projectList").hidePopover();
+  // The keyboard goes back to the timeline once a project is chosen, so Space plays instead of opening the list again.
+  $("project").blur();
+  if (folder && folder !== state.folder) openProject(folder);
+}
+// A list closed without a choice hands the keyboard back to its button. A press on the timeline or the viewer lets
+// go of it: the ruler's drag does not move the focus, and Space there should play.
+for (const id of ["timeline", "screen"]) $(id)?.addEventListener("pointerdown", () => {
+  if (document.activeElement === $("project")) $("project").blur();
+}, true);
+
+$("projectList").addEventListener("toggle", (event) => {
+  const open = event.newState === "open";
+  $("project").setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  const list = $("projectList");
+  const at = $("project").getBoundingClientRect();
+  $("projectFind").value = "";
+  list.style.maxHeight = Math.max(180, Math.min(640, window.innerHeight - at.bottom - 14)) + "px";
+  fillProjects();
+  list.style.left = Math.max(8, Math.min(at.left, window.innerWidth - list.offsetWidth - 8)) + "px";
+  list.style.top = at.bottom + 6 + "px";
+  $("projectFind").focus();
+  markProject(projectPick.at);
+  // Another tab, or an agent, may have made or changed projects since the list was last read.
+  refreshProjects(state.folder).catch(() => {});
+});
+$("projectFind").addEventListener("input", () => fillProjects());
+$("projectFind").addEventListener("keydown", (event) => {
+  const step = { ArrowDown: 1, ArrowUp: -1, PageDown: 6, PageUp: -6 }[event.key];
+  if (step) {
+    event.preventDefault();
+    markProject(projectPick.at + step);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (projectPick.shown[projectPick.at]) pickProject(projectPick.shown[projectPick.at]);
+  }
+});
+$("projectRows").addEventListener("pointermove", (event) => {
+  const row = event.target.closest(".project-row");
+  const index = row ? projectPick.shown.indexOf(row.dataset.folder) : -1;
+  if (index >= 0 && index !== projectPick.at) markProject(index, false);
+});
+$("projectRows").addEventListener("click", (event) => {
+  const row = event.target.closest(".project-row");
+  if (row) pickProject(row.dataset.folder);
+});
 
 async function createProject(name) {
   const { folder } = await postJson("/projects", { name });
@@ -6944,7 +7165,6 @@ async function start() {
   connect();
 }
 
-$("project").addEventListener("change", (event) => openProject(event.target.value));
 // A new project is named in a dialog of the editor's own. The browser's prompt box does not
 // open in every place the editor runs, such as an embedded browser.
 $("newProject").addEventListener("click", () => {
@@ -6969,7 +7189,7 @@ $("creatorForm").addEventListener("submit", async (event) => {
   };
   if (!/[A-Za-z0-9]/.test(name)) return bad("Give it a name with letters or numbers.");
   const folder = name.replace(/[^A-Za-z0-9 _-]/g, "").trim().replaceAll(" ", "_").slice(0, 64);
-  if ([...$("project").options].some((o) => o.value.toLowerCase() === folder.toLowerCase())) return bad("There is already a project called " + folder.replaceAll("_", " ") + ". Pick another name.");
+  if ((state.projects || []).some((known) => known.toLowerCase() === folder.toLowerCase())) return bad("There is already a project called " + folder.replaceAll("_", " ") + ". Pick another name.");
   $("creatorGo").disabled = true;
   try {
     await createProject(name);
@@ -7377,12 +7597,26 @@ $("split").addEventListener("click", splitAtPlayhead);
 $("extendBack").addEventListener("click", () => addLinked("extend_before"));
 $("extendForward").addEventListener("click", () => addLinked("extend_after"));
 $("bridge").addEventListener("click", () => addLinked("bridge"));
+$("bridgeHold").addEventListener("click", () => addLinked("bridge", "hold"));
 $("merge").addEventListener("click", mergeWithNext);
 $("ripple").addEventListener("click", rippleDelete);
 $("closeGap").addEventListener("click", closeGap);
 $("fit").addEventListener("click", fitTimeline);
 $("addSound").addEventListener("click", addSound);
 // A click on an empty part of a sound lane selects nothing.
+// The keyboard belongs to the timeline once it is touched. A menu keeps the focus after a choice is made in it, and
+// the ruler's drag does not take it (it prevents the default, so no text gets selected), so Space would open the
+// menu again, or type into a field, where it should play. A press on the timeline or the viewer lets go of a field.
+function releaseField() {
+  const held = document.activeElement;
+  if (held && /INPUT|TEXTAREA|SELECT/.test(held.tagName)) held.blur();
+}
+for (const id of ["timeline", "screen"]) $(id)?.addEventListener("pointerdown", releaseField, true);
+// A menu that was just used with the mouse hands the keyboard back at once.
+window.addEventListener("change", (event) => {
+  if (event.target.tagName === "SELECT" && !event.target.matches(":focus-visible")) event.target.blur();
+});
+
 $("tlContent").addEventListener("pointerdown", (event) => {
   if (event.target.classList.contains("extra") && event.target.classList.contains("lane")) selectClip(null);
 });

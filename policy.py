@@ -208,20 +208,30 @@ def video_span(mode, source_frames, length, hold_frames=39, align="av", keep=0.0
     }
 
 
-def bridge_spans(first_frames, last_frames, length, hold_frames=39, align="av", keep=0.0):
-    """Hold the end of one clip at the start of a take and the start of another at its end."""
+def bridge_spans(first_frames, last_frames, length, hold_frames=39, align="av", keep=0.0, end_hold_frames=None):
+    """Hold the end of one clip at the start of a take and the start of another at its end.
+
+    end_hold_frames is how much of the second clip is held, when that is not as much as of the first: a short run,
+    5 or 22 frames, which a take of 39 + 51k frames can end on because both sit on the latent's 17-frame grid.
+    """
     length = int(length)
     check_length(length)
-    hold = snap_hold(hold_frames, min(int(first_frames), int(last_frames)), length, align)
-    insert = length - hold
+    if end_hold_frames:
+        hold = snap_hold(hold_frames, int(first_frames), length, align)
+        end = snap_hold(end_hold_frames, int(last_frames), length, "video")
+    else:
+        hold = end = snap_hold(hold_frames, min(int(first_frames), int(last_frames)), length, align)
+    insert = length - end
     if insert - hold < 5:
-        raise ValueError("no room to generate: two %s-frame holds inside %s frames" % (hold, length))
+        raise ValueError("no room to generate: holds of %s and %s frames inside %s frames" % (hold, end, length))
+    if insert % 17:
+        raise ValueError("a %s-frame hold cannot end a %s-frame take: it would not start on the latent's grid" % (end, length))
 
     def span(at, source_start, before, after):
         return {
             "mode": "bridge",
             "insert": at,
-            "hold": hold,
+            "hold": hold if at == 0 else end,
             "keep": float(keep),
             "generate_before": before,
             "generate_after": after,
@@ -272,9 +282,15 @@ def audio_window(mode, span, length, audio_seconds, align="video"):
     if mode == "span":
         if span is None:
             raise ValueError("audio hold span follows the held video. Use full when there is no source video.")
-        first = audio_ticks(span["insert"])
-        ticks = audio_ticks(span["hold"])
-        source_second = span["source_start"] / float(FPS)
+        # The sound has 5 ticks for every 3 frames, so a hold that starts on any other frame starts between two
+        # ticks. The held sound then begins on the next whole tick, with the source moved on by the same part of a
+        # tick: placed on the nearest tick as it is, it would play up to 8 ms early, and the wave would step where
+        # the timeline cuts from this take to the clip the sound came from.
+        exact = span["insert"] * AUDIO_HZ / float(FPS)
+        first = int(math.ceil(exact - 1e-6))
+        late = (first - exact) / float(AUDIO_HZ)
+        ticks = int(math.floor((span["hold"] / float(FPS) - late) * AUDIO_HZ + 1e-6))
+        source_second = span["source_start"] / float(FPS) + late
     else:
         first = 0
         ticks = total

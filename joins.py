@@ -5,7 +5,8 @@ source (or its start), and at the start of the new take (or its end). The two co
 same sound, so how far apart they are says how good the join is, with nothing to judge by eye:
 
   latent   the two takes' saved latents over the held frames (see holds.py), compared number for number. `picture` is
-           the largest difference: under EXACT the hold is exactly what the source was sampled as. `sound` is how
+           the largest difference: under EXACT the hold is exactly what the source was sampled as. `final` is the
+           same for the refine pass of two finals, which is the picture their files show. `sound` is how
            many of the held sound's steps are, and `of` how many were held: the editor softens the few next to the
            new material on purpose, so those are regenerated a little. None: a take has no saved latents, or the held
            frames are not on the latent's grid, so they went through the decoder and the encoder again.
@@ -168,6 +169,8 @@ def latent(a_hold, a_first, a_total, b_hold, b_first, b_total, count=HOLD, tail=
     if ours is None or theirs is None or ours["samples"].shape != theirs["samples"].shape:
         return None
     found = {"picture": float((ours["samples"] - theirs["samples"]).abs().max())}
+    if "final" in ours and "final" in theirs and ours["final"].shape == theirs["final"].shape:
+        found["final"] = float((ours["final"] - theirs["final"]).abs().max())
     if "audio" in ours and "audio" in theirs and ours["audio"].shape == theirs["audio"].shape:
         apart = (ours["audio"] - theirs["audio"]).abs().amax(dim=tuple(range(ours["audio"].dim() - 1))).tolist()
         found["sound"] = next((n for n, value in enumerate(apart if tail else apart[::-1]) if value > EXACT), len(apart))
@@ -250,6 +253,10 @@ def project_joins(project):
             source = items.get((side or {}).get("item"))
             if not side or not source:
                 continue
+            if key == "b" and link.get("arrive") == "pin":
+                # A bridge that arrives on a pinned frame holds nothing of the next clip: there are no two copies
+                # to compare. The editor's cut score says how that cut looks.
+                continue
             other = active_take(clips.get(source["clip"]) or {})
             whole = source["out"] == side["last"] - over if tail else source["in"] == side["first"] + over
             if not other or other["file"] != side["file"] or not whole:
@@ -263,6 +270,8 @@ def project_joins(project):
             elif not tail:
                 mine = max(1, int(round((item["out"] - item["in"]) / float(item.get("speed") or 1))))
                 if item["start"] + mine == source["start"]:
+                    # A bridge can hold fewer frames of the clip it arrives at than of the one it leaves.
+                    hold = int(link.get("end_hold") or hold) if key == "b" else hold
                     found.append({"name": clip.get("name"), "mode": link["mode"], "tail": False, "count": hold, "at": source["start"],
                                   "totals": (other.get("frames"), take.get("frames")), "over": over,
                                   "a": (side["file"], side.get("subfolder"), side["first"]),
@@ -300,6 +309,8 @@ def line(row):
         return "%-28s %-13s %s" % ((row.get("name") or "")[:28], row.get("mode", ""), row["error"])
     p, s, held = row.get("picture") or {}, row.get("sound") or {}, row.get("latent")
     exact = "pixels" if held is None else ("exact" if held["picture"] <= EXACT else "%.3g" % held["picture"])
+    if held is not None and held.get("final") is not None:
+        exact += " final " + ("exact" if held["final"] <= EXACT else "%.3g" % held["final"])
     if held is not None and held.get("sound") is not None:
         exact += " +%d/%d" % (held["sound"], held["of"])
     best = p.get("best") or {}
@@ -307,7 +318,7 @@ def line(row):
     def show(value, form):
         return "-" if value is None else form % value
 
-    return "%-28s %-13s %-13s over %s  level %5s  edge %2s  now %5s  best %5s %3s deeper  darker %6s  softer %6s  sound %6s lag %6s click %5s  cut %s" % (
+    return "%-28s %-13s %-24s over %s  level %5s  edge %2s  now %5s  best %5s %3s deeper  darker %6s  softer %6s  sound %6s lag %6s click %5s  cut %s" % (
         (row.get("name") or "")[:28], row.get("mode", ""), exact, row.get("over", 0), show(p.get("level"), "%.1f"), show(p.get("edge"), "%d"),
         show(best.get("now"), "%.1f"), show(best.get("psnr"), "%.1f"), show(best.get("deeper"), "%+d"),
         show(p.get("darker"), "%+.2f%%"), show(p.get("softer"), "%+.1f%%"), show(s.get("alike"), "%.3f"),

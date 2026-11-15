@@ -22,13 +22,13 @@ except the two uploads.
 | `POST /projects/open` | the zip as the body, `Content-Type: application/zip` | Opens a zip made by `archive` as a new project, under its old name or that name with a number. The body is written to disk as it arrives, so ComfyUI's upload size limit does not apply. Returns `{"folder", "name", "release", "keep", "missing_loras", "outside", "files"}`; 400 with a reason for a zip that is not a project, holds unsafe paths or links, or comes from a newer release |
 | `POST /project/{name}/duplicate` | optional `{"name"}` | A copy in a folder of its own, with its clips, takes and pictures, and no renders pending. The default name is the original's with `copy` after it. Returns `{"folder", "project"}`; 409 when the name is taken |
 | `DELETE /project/{name}` | | Moves the project's folder to `h3take_projects/.trash`; nothing is erased. Refused with 409 while it is rendering. Do this only when the user asks. Returns `{"deleted", "trash"}` |
-| `GET /projects` | | `{"projects": [folder, ...], "titles": {folder: name, ...}, "profiles": [{"id", "title", "hint", "available", "missing"}, ...], "finals": [note, ...], "loras": [file, ...], "realism": {"file", "strength", "installed", "range", "lora_range", "limit"}, "checkpoints": [file, ...], "samplers": [name, ...], "schedulers": [name, ...]}`. Each profile also carries its `steps`, `sampler` and `scheduler`. `finals` says what finals leave out because a file is missing, `loras` lists every file in `models/loras`, and `realism` describes the Realism Slider that finals run |
+| `GET /projects` | | `{"projects": [folder, ...], "titles": {folder: name, ...}, "cards": {folder: {"name", "format", "clips", "frames", "picture", "rendering", "changed"}, ...}, "profiles": [{"id", "title", "hint", "available", "missing"}, ...], "finals": [note, ...], "loras": [file, ...], "realism": {"file", "strength", "installed", "range", "lora_range", "limit"}, "checkpoints": [file, ...], "samplers": [name, ...], "schedulers": [name, ...]}`. Each profile also carries its `steps`, `sampler` and `scheduler`. `finals` says what finals leave out because a file is missing, `loras` lists every file in `models/loras`, and `realism` describes the Realism Slider that finals run. `cards` is what a project list shows: `clips` and `frames` count what is on the timeline, `picture` is the `{"file", "subfolder"}` of the first rendered clip's poster or null, `rendering` is how many renders are queued, and `changed` is when the project file last changed, in seconds since 1970 |
 | `POST /projects` | `{"name"}` | `{"folder", "project"}`. Opens it if it exists |
 | `GET /project/{name}` | | The whole project |
 | `GET /project/{name}/summary` | | The summary, below |
 | `POST /project/{name}/ops` with `{"op": "render", "clip", "quality": "upscale", "upscaler"?, "detail"?}` | | `upscaler` is `relayvsr` (seconds a clip; sharpens) or `seedvr2` (minutes a clip, far more GPU memory; redraws texture), the first installed one when left out; `GET /projects` lists them under `upscalers` with `installed`. `detail` is for RelayVSR: 0 to 1 and 0.5 when left out, is how much of the detail the upscaler adds is kept: 1 is sharpest and can age a face, 0 is a plain enlargement. Enlarges the clip's active final two times with RelayVSR and makes the result a new take (`upscaled` names the take it came from, `size` is doubled). Refused for a draft, a take that is already upscaled, a clip over 240 frames, or when the two RelayVSR files are not installed |
 | `GET /project/{name}/detail` | | `{"level", "size", "clips": [{"item", "at", "fine", "part", "soft", "drift"?}]}`: how sharp each rendered clip on the timeline is at the size of the cut. A clip that extends another also has `drift`: `{"root", "change", "drifted", "limit"}`, its picture's texture against the first take of its shot (`root`, a timeline item), `drifted` when it is 10% or more away. `fine` is the measure, `part` is it against the cut's `level`, and `soft` is true under half: a draft among finals, or footage smaller than the cut. Measured from the pictures |
-| `GET /project/{name}/cuts` | | `{"cuts": [{"before", "after", "at", "kind", "score", "notes", ...}], "effects": [{"effect", "edge", "at", "kind", "score", "notes"}], "inside": [{"item", "frame", "at", "kind", "score", "notes"}], "worst"}`. `effects` scores the cut into (`edge` `start`) and out of (`end`) each rendered VFX clip against the picture under it. `inside` lists generated takes that change picture within the part their clip shows: `kind` `cut` or `fade`, `frame` in the take, `at` on the timeline; trim the clip before it or render again. `cuts`: a score from 0 to 100 for each place where two rendered clips touch. `kind` is `continuous`, `new shot` or `jump`; a `jump` (the same shot, the subject pops) scores under 60 and wants an extension from the first clip's last frame or a different framing. Measured from the pictures, so it never changes for the same takes and trims |
+| `GET /project/{name}/cuts` | | `{"cuts": [{"before", "after", "at", "kind", "score", "notes", ...}], "effects": [{"effect", "edge", "at", "kind", "score", "notes"}], "inside": [{"item", "frame", "at", "kind", "score", "notes"}], "worst"}`. `effects` scores the cut into (`edge` `start`) and out of (`end`) each rendered VFX clip against the picture under it. Each cut also has `sound`: `{"kind", "score", "notes", "step", "colour", "click"}`, what the cut sounds like (`continuous`, `new sound`, `level jump`, `dropout` or `silent`; `step` is the change in loudness in dB, negative for quieter after). Each cut has `movement` too: `{"kind", "score", "notes", "before", "after"}`, how the camera moves on each side (`before` and `after` are pan x, pan y in widths a second and zoom in parts a second) and whether the move `carries on`, `stops`, `starts`, `reverses` or `changes`; `score` is null at a cut to a new shot. And `parts`: `{"kind", "score", "notes", "stops", "starts"}`, whether what moves inside the frame, beyond the camera's move, carries across the cut: `stops` and `starts` are the shares of the frame that moved on one side and are still on the other. `sound_inside` lists takes whose sound is cut off (`chop`), drops out, or ends far louder or quieter than it began (`swell`, `fade`). `arrivals` has one row for each bridge that ends on a pinned frame: `kind` `arrives` or `short of its pin`, with `level`, how much darker or lighter than its pin the take ends, in percent. `worst` counts all of these. `inside` lists generated takes that change picture within the part their clip shows: `kind` `cut` or `fade`, `frame` in the take, `at` on the timeline; trim the clip before it or render again. `cuts`: a score from 0 to 100 for each place where two rendered clips touch. `kind` is `continuous`, `new shot` or `jump`; a `jump` (the same shot, the subject pops) scores under 60 and wants an extension from the first clip's last frame or a different framing. Measured from the pictures, so it never changes for the same takes and trims |
 | `POST /project/{name}/rate` | `{"from", "to", "rubric"?, "resolution"?, "note"?}` | `{"rating": {"from", "to", "rows", "tokens"}}`: that range of the cut (timeline frames, up to 180 s) rated by Google's Gemini Decision model. Each row has `title`, `score` (a level, 0 is worst), `of` (the top level), `part` (0 to 1), `level` (its description) and `confidence`. A criterion with two levels is a check: `of` is 1 and `part` is how likely the good end is. The default rubric checks the same person from start to end, a match with the cast picture (sent along unless `"reference": false`), a sharp face, natural light, a stable background and natural movement, rates attention on five levels, and adds a `cuts` row measured by the editor itself (`measured: true`, no confidence), since the model samples about a frame a second and misses jump cuts; `rubric` replaces it with a list of `{key, title?, instructions, levels}`, levels worst first. Needs the user's Gemini key, which only they can set (409 if none); it sends the video to Google, so use it when the user wants a rating, not on every edit |
 | `POST /project/{name}/ops` | `{"ops": [...], "revision"?}` | `{"results", "revision", "summary"}` |
 | `GET /project/{name}/wait?timeout=600` | | The summary, plus `timed_out`, once nothing renders. `after=N` waits for a revision past N instead. Timeout is at most 1800 |
@@ -190,11 +190,24 @@ with no take, and its plan counts `effects_missing` and `effects_stale`.
 ### Linked clips
 
 `extend_after`, `extend_before`, `bridge`, `merge`: `item`, optional `seconds`, `action`,
-and `fields` (any clip field). Each returns `{"clip", "item"}`, and the new clip still
+and `fields` (any clip field). `bridge` also takes `arrive`. Left out, `seconds` is 4.25,
+and 6.375 for a bridge (not with `"arrive": "hold"`): a move between two framings needs
+that room, and shorter ones tend to dissolve or cut. Each returns `{"clip", "item"}`, and the new clip still
 needs a render.
 
 - The source item must be rendered, with at least 39 frames on the timeline.
 - `bridge` and `merge` join the item to the next one on the timeline, which must be rendered too.
+- A `bridge` lands on a short run of the next clip: it holds that clip's first 22 frames,
+  picture and sound, at its own end, and the timeline cuts 9 frames inside them, so the
+  next item's `in` moves forward by 9 (and onto the latent's grid first, by 16 frames at
+  most). The link says `"arrive": "short", "end_hold": 22`, and the next item needs 22
+  frames on the timeline. `"arrive": "hold"` holds 39 frames of the next clip instead:
+  H3 usually cuts to a run that long, so use it only into a clip that starts in
+  mid-movement. `"arrive": "pin"` pins the next clip's first frame alone as the bridge's
+  last and leaves the next item untrimmed; the take lands there without that clip's
+  movement or sound. After rendering, read the cuts report: `sound`, `movement` and
+  `parts` on the cut into the next clip, and `inside` for a bridge that cut or faded
+  inside itself, which wants another seed.
 - `merge` also needs the two items side by side at 100% speed, the first with at least
   71 frames and the second with at least 70. It replaces the last 32 frames of the
   first and the first 31 of the second with 63 new ones, so the scene keeps its length.
@@ -220,8 +233,8 @@ needs a render.
   refused if it would fall before the start of the sound. The held frames end 9 frames
   after the source item's `out`, and start 9 before its `in`. The source item must be
   at 100% speed.
-  A bridge lays the same track under the frames it holds from the next clip, so that
-  clip should continue the track at that point.
+  A bridge that holds lays the same track under the frames it holds from the next clip,
+  so that clip should continue the track at that point.
 
 ### Project and cast
 
@@ -258,7 +271,8 @@ drafts and finals alike, and `realism`:
   not installed is left out of renders.
 - `start_sigma` on a LoRA, from 1 down to 0, is where in the schedule it joins. 1, the
   default, runs it on every step. A lower value leaves the first steps alone, so framing
-  and pose stay as they would be without it; 0.75 is a good start for a look or skin LoRA.
+  and pose stay as they would be without it; 0.93 is a good start for a look or skin LoRA.
+  H3 spends most of a render near 1: 0.93 is about halfway through, 0.75 four fifths.
 - A clip takes `loras` too, in `add_clip` and `update_clip` `fields`, in the same shape: the
   LoRAs only that clip samples with, after the project's. A row for a file the project also
   lists takes that row's place for this clip, so `{"file": ..., "strength": 0.4}` changes its
@@ -478,9 +492,12 @@ Everything runs at 24 frames per second. H3 renders set lengths, so `seconds` sn
   steps of about 0.7 s, and 22 frames at the least;
 - `extend_after` and `extend_before` render 39 + 51k frames and show the 51k new
   ones and the 9 held frames beside them, in steps of about 2.1 s;
-- `bridge` renders 39 + 51k frames with k of 2 or more, and shows all but 30 of the
-  39 held at each end. A merge is the shortest bridge: 141 frames, 81 of them shown,
-  63 of them new.
+- `bridge` renders 39 + 51k frames and shows them from frame 30 to 13 frames before the
+  end: all but 30 of the 39 it holds of the first clip, and 9 of the 22 it holds of the
+  next. With `"arrive": "hold"` it renders 39 + 51k frames with k of 2 or more, and shows
+  all but 30 of the 39 held at each end. With `"arrive": "pin"` it shows up to the frame
+  before its last. A merge is the shortest holding bridge: 141 frames,
+  81 of them shown, 63 of them new.
 
 The timeline reserves that length before the render, so a finished take lands where the
 timeline expects it.

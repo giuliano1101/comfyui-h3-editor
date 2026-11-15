@@ -10,7 +10,15 @@
 <div class="app" id="app">
   <header class="bar">
     <h1 class="sr">H3 Editor</h1>
-    <select id="project" aria-label="Project"></select>
+    <button id="project" class="project-button" type="button" aria-label="Project" title="Open another project" aria-haspopup="listbox" aria-expanded="false" popovertarget="projectList"><span id="projectShot" class="project-shot empty"></span><span id="projectName" class="project-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+    <div id="projectList" class="menu project-list" popover aria-label="Projects">
+      <div class="project-find">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/></svg>
+        <input id="projectFind" type="text" role="combobox" aria-label="Find a project" aria-controls="projectRows" aria-expanded="true" aria-autocomplete="list" placeholder="Find a project" autocomplete="off" spellcheck="false">
+        <span id="projectCount" class="project-count"></span>
+      </div>
+      <div id="projectRows" class="project-rows" role="listbox" aria-label="Projects, the open one first, then the last changed"></div>
+    </div>
     <button id="projectMore" class="tool" aria-label="Rename, duplicate or delete this project" title="Rename, duplicate or delete this project" aria-haspopup="menu" popovertarget="projectMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></svg></button>
     <div id="projectMenu" class="menu" popover role="menu" aria-label="This project">
       <button id="projectRename" role="menuitem"><b>Rename</b><span>Give this project another name</span></button>
@@ -120,7 +128,8 @@
       <div id="generateMenu" class="menu" popover role="menu" aria-label="Generate from the selected clip">
         <button id="extendBack" role="menuitem"><b>Extend back</b><span>Generate what happens before the selected clip</span></button>
         <button id="extendForward" role="menuitem"><b>Extend forward</b><span>Generate what happens after the selected clip</span></button>
-        <button id="bridge" role="menuitem"><b>Bridge to next</b><span>Generate what connects the selected clip to the next one</span></button>
+        <button id="bridge" role="menuitem"><b>Bridge to next</b><span>Generate what leads from the selected clip into the start of the next one</span></button>
+        <button id="bridgeHold" role="menuitem"><b>Bridge into its movement</b><span>The same, holding more of the next clip's start: for a clip that starts in mid-movement</span></button>
         <button id="merge" role="menuitem"><b>Merge with next</b><span>Replace the join with a generated crossing, keeping the scene's length</span></button>
       </div>
       <button id="addSound" class="quiet" title="Lay music, narration or another sound under the cut, on a lane of its own">Add sound</button>

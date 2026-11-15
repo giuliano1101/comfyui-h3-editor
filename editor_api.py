@@ -18,6 +18,7 @@ import folder_paths
 
 from . import archive
 from . import cuts as cutscore
+from . import listen as soundscore
 from . import detail as finescore
 from . import media
 from . import project as store
@@ -539,16 +540,34 @@ def project_folders():
     return sorted(n for n in os.listdir(root()) if os.path.exists(os.path.join(root(), n, "project.json")))
 
 
-def project_titles(names):
-    """The name each project shows, which a rename changes while its folder stays."""
-    titles = {}
+CARDS = {}    # folder -> (when its project.json last changed, its card), so listing many projects reads each file once
+
+
+def project_cards(names):
+    """What the project picker shows for each project, and when the project last changed.
+
+    A project file is read again only after it changed. One that cannot be read still gets a card, with its folder's name.
+    """
+    cards = {}
     for name in names:
         try:
-            with open(os.path.join(root(), name, "project.json"), encoding="utf-8") as f:
-                titles[name] = str(json.load(f).get("name") or name.replace("_", " "))
-        except (OSError, ValueError):
-            titles[name] = name.replace("_", " ")
-    return titles
+            changed = os.path.getmtime(os.path.join(root(), name, "project.json"))
+            kept = CARDS.get(name)
+            if not kept or kept[0] != changed:
+                with open(os.path.join(root(), name, "project.json"), encoding="utf-8") as f:
+                    kept = CARDS[name] = (changed, {**store.project_card(json.load(f)), "changed": int(changed)})
+            cards[name] = kept[1]
+        except (OSError, ValueError, AttributeError):
+            cards[name] = {"name": "", "format": "16:9", "clips": 0, "frames": 0, "picture": None, "rendering": 0, "changed": 0}
+    for gone in set(CARDS) - set(names):
+        CARDS.pop(gone, None)
+    return cards
+
+
+def project_titles(names, cards=None):
+    """The name each project shows, which a rename changes while its folder stays."""
+    cards = project_cards(names) if cards is None else cards
+    return {name: cards[name]["name"] or name.replace("_", " ") for name in names}
 
 
 async def rename(request):
@@ -717,7 +736,8 @@ async def remove(request):
 async def projects(request):
     names = project_folders()
     available = available_models()
-    return web.json_response({"projects": names, "titles": project_titles(names), "profiles": store.profile_status(available),
+    cards = project_cards(names)
+    return web.json_response({"projects": names, "titles": project_titles(names, cards), "cards": cards, "profiles": store.profile_status(available),
                               "finals": store.finals_status(available),
                               "loras": lora_files(), "realism": store.lora_status(available), "presets": read_presets(), "catalog": read_catalog(), "refmods": refmods_status(), "encoders": encoder_choices(available), "sizes": store.size_choices(), "upscalers": store.upscaler_status(available), "release": pack_version(), **sampling_choices()})
 
@@ -774,10 +794,69 @@ async def cuts(request):
     The numbers come from the pictures alone (see cuts.py), so the same takes and the same trims give the same scores.
     """
     data = read_project(request.match_info["name"])
-    found, edges, inside = await asyncio.gather(score_cuts(data), score_effect_cuts(data), score_inside(data))
-    scored = [c["score"] for c in found + edges + inside if c["score"] is not None]
-    return web.json_response({"cuts": found, "effects": edges, "inside": inside, "worst": min(scored) if scored else None,
-                              "revision": data.get("revision", 0)})
+    found, edges, inside, heard, arrivals = await asyncio.gather(
+        score_cuts(data), score_effect_cuts(data), score_inside(data), score_sound_inside(data), score_arrivals(data))
+    scored = [c["score"] for c in found + edges + inside + heard + arrivals if c["score"] is not None]
+    scored += [c["sound"]["score"] for c in found if c.get("sound")]
+    scored += [c["movement"]["score"] for c in found if c.get("movement") and c["movement"]["score"] is not None]
+    scored += [c["parts"]["score"] for c in found if c.get("parts") and c["parts"]["score"] is not None]
+    return web.json_response({"cuts": found, "effects": edges, "inside": inside, "sound_inside": heard, "arrivals": arrivals,
+                              "worst": min(scored) if scored else None, "revision": data.get("revision", 0)})
+
+
+SOUND_SCORES = {}
+
+
+async def cached(store_in, key, work, *args):
+    """A score worked out once per key, off the event loop."""
+    if key not in store_in:
+        store_in[key] = await asyncio.to_thread(work, *args)
+        while len(store_in) > 2000:
+            store_in.pop(next(iter(store_in)))
+    return store_in[key]
+
+
+async def score_sound_inside(data):
+    """Where the sound of a generated take on the timeline jumps, drops out, or ends far louder or quieter than it
+    began (see listen.py), within the part its clip shows."""
+    gate = asyncio.Semaphore(3)
+
+    async def one(item):
+        clip = store.find_clip(data, item["clip"]) or {}
+        take = store.active_take(clip)
+        if not take or clip.get("kind") == "footage":
+            return []
+        try:
+            path = output_path(take.get("subfolder"), take["file"])
+            async with gate:
+                rows = await cached(SOUND_SCORES, ("inside", path, os.path.getmtime(path)), soundscore.inside, path, media.command)
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, web.HTTPException):
+            return []
+        speed = store.clean_speed(item.get("speed"))
+        return [{"item": item["id"], "take": take["id"], "frame": row["at"], "at": item["start"] + int(round((max(row["at"], item["in"]) - item["in"]) / speed)),
+                 "kind": row["kind"], "score": row["score"], "notes": row["notes"]}
+                for row in rows if row["kind"] in ("swell", "fade") or item["in"] <= row["at"] < item["out"]]
+
+    return [row for rows in await asyncio.gather(*[one(item) for item in store.ordered(data)]) for row in rows]
+
+
+async def score_arrivals(data):
+    """How each bridge that ends on a pinned frame of the next clip gets there (see cuts.judge_arrival)."""
+    async def one(item):
+        clip = store.find_clip(data, item["clip"]) or {}
+        take, link = store.active_take(clip), clip.get("link")
+        if not take or not store.arrives_on_pin(link) or not link.get("b"):
+            return None
+        side = link["b"]
+        try:
+            path, target = output_path(take.get("subfolder"), take["file"]), output_path(side.get("subfolder"), side["file"])
+            key = ("arrival", path, os.path.getmtime(path), target, os.path.getmtime(target), side["first"])
+            row = await cached(SOUND_SCORES, key, cutscore.score_arrival, path, int(take["frames"]), target, int(side["first"]), media.command)
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, web.HTTPException):
+            return None
+        return dict(row, item=item["id"], take=take["id"], at=store.item_end(item))
+
+    return [row for row in await asyncio.gather(*[one(item) for item in store.ordered(data)]) if row]
 
 
 async def score_cuts(data):
@@ -798,7 +877,28 @@ async def score_cuts(data):
                     CUT_SCORES[key] = await asyncio.to_thread(cutscore.score_cut, paths[0], before["out"], paths[1], after["in"], media.command)
                 while len(CUT_SCORES) > 2000:
                     CUT_SCORES.pop(next(iter(CUT_SCORES)))
-            return dict(entry, **CUT_SCORES[key])
+            entry = dict(entry, **CUT_SCORES[key])
+            try:
+                # What the cut sounds like, beside what it looks like.
+                async with gate:
+                    entry["sound"] = await cached(SOUND_SCORES, ("cut",) + key, soundscore.score_cut, paths[0], before["out"], paths[1], after["in"], media.command)
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
+                entry["sound"] = None
+            try:
+                # Whether the camera's move carries across it. Scored inside one shot; described at a new one.
+                async with gate:
+                    entry["movement"] = await cached(SOUND_SCORES, ("move",) + key, cutscore.score_movement, paths[0], before["out"], paths[1],
+                                                     after["in"], entry["kind"] != "new shot", media.command)
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
+                entry["movement"] = None
+            try:
+                # Whether what moves inside the frame carries across it, with the camera's move taken out.
+                async with gate:
+                    entry["parts"] = await cached(SOUND_SCORES, ("parts",) + key, cutscore.score_parts, paths[0], before["out"], paths[1],
+                                                  after["in"], entry["kind"] != "new shot", media.command)
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError):
+                entry["parts"] = None
+            return entry
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, web.HTTPException) as error:
             return dict(entry, kind="unreadable", score=None, notes=[str(getattr(error, "text", None) or error)[:200]])
 

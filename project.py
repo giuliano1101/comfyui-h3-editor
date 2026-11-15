@@ -25,9 +25,11 @@ QUALITIES = {
     "draft": {},
     # A final renders at the final size, H3's own size of about a megapixel. Its picture is
     # then upscaled to the refine size, where the model redraws its last steps. The Realism
-    # Slider skips early structure steps on the first pass (start_sigma 0.75) and runs across
-    # the whole refine pass at this strength.
-    "final": {"refine": True, "lora": 1.2, "lora_start_sigma": 0.75},
+    # Slider skips the first steps of the first pass, which set the framing and pose, and runs
+    # across the whole refine pass at this strength. With the video shift of 12, HyperFlow's six
+    # steps sit at sigma 1.0, 0.983, 0.915, 0.675, 0.385 and 0.159: 0.93 leaves out the first
+    # two. At 0.75 it only joined for the last three, where it changed next to nothing.
+    "final": {"refine": True, "lora": 1.2, "lora_start_sigma": 0.93},
 }
 # Picture sizes per project format. Draft is for trying things, final for the cut, and
 # refine is the size a final comes out at.
@@ -588,9 +590,35 @@ def linked_length(link, seconds):
     """Take length for a linked clip, so every hold starts on a shared video and audio boundary."""
     hold = int(link["hold"])
     frames = float(seconds) * FPS
-    if link["mode"] == "bridge":
-        return hold + JOINT * max(2, int(round((frames + hold) / JOINT)))
+    if link["mode"] == "bridge" and not arrives_on_pin(link):
+        end = end_hold(link)
+        return hold + JOINT * max(2 if end == hold else 1, int(round((frames + end) / JOINT)))
     return hold + JOINT * max(1, int(round(frames / JOINT)))
+
+
+def end_hold(link):
+    """How many frames of the next clip a bridge holds at its own end.
+
+    A bridge holds the last 39 frames of the first clip. Of the next clip it holds a short run, END_HOLD frames,
+    with their sound: H3 cuts to a long run of another shot's frames, and one pinned frame carries no movement and
+    no sound, so the take lands on it dark, still and silent. A short run is the middle that works: on two test
+    pairs over three seeds each the cut into the next clip scored 97 to 99 for the picture and 78 to 97 for the
+    sound, against 71 to 97 and 0 to 90 for a pin. A link without end_hold holds as much as of the first clip.
+    """
+    return int(link.get("end_hold") or link["hold"])
+
+
+def arrives_on_pin(link):
+    """Does a bridge arrive on the next clip's first frame, pinned as its own last frame.
+
+    A bridge can reach the next clip in two ways. Holding the next clip's first frames at its end, as it holds the
+    first clip's last frames at its start, keeps their latents exactly, but H3 then treats them as another shot:
+    in tests it followed the prompt and cut to them a few frames early, in 8 of 9 pairs of different shots. With
+    only the next clip's first frame pinned, the take moves into that frame in one shot. So that is how a bridge
+    arrives unless it was made to hold: holding is still the better way into a clip that starts in mid-movement,
+    where one frame does not say where things are going.
+    """
+    return bool(link) and link.get("mode") == "bridge" and link.get("arrive") == "pin"
 
 
 def source_range(side, hold, tail):
@@ -789,7 +817,8 @@ def clip_prompt(project, clip):
             owner = {"subject": number} if number else {"description": voice.get("description") or voice["name"]}
         return compose_reference_prompt(
             project.get("style", ""), action, subjects=cast,
-            first_frame=bool(frame_of(clip, "first")), last_frame=bool(frame_of(clip, "last")), voice=owner, **fields,
+            first_frame=bool(frame_of(clip, "first")),
+            last_frame=bool(frame_of(clip, "last")) or arrives_on_pin(clip.get("link")), voice=owner, **fields,
         )
     return compose_prompt(project.get("style", ""), action, **fields)
 
@@ -912,14 +941,24 @@ def render_graph(project, folder, clip, take, quality, seed, available=None):
             "video_mode": link["mode"], "hold_frames": hold, "audio_hold": "span",
             "source_video": ["6", 0], "source_audio": ["6", 1], "source_hold": ["6", 2],
         })
-        if link["mode"] == "bridge":
-            graph["7"] = load_node(link["b"], hold, False)
-            # A hold alone does not make the take arrive. The guide tells H3 what it must land on.
-            graph["8"] = {"class_type": "ImageFromBatch", "inputs": {"image": ["7", 0], "batch_index": 0, "length": 1}}
-            take_inputs.update({
-                "end_video": ["7", 0], "end_audio": ["7", 1], "end_hold": ["7", 2],
-                "mid_frames": str(length - hold), "mid_images.mid_image_0": ["8", 0],
-            })
+        if arrives_on_pin(link):
+            # The take carries on from the first clip as an extension does, and ends on the next clip's first
+            # frame, pinned. H3 moves into a pinned frame in one shot, where it cuts to a run of held frames.
+            at = int(link["b"]["first"])
+            graph["7"] = load_node(dict(link["b"], last=at + 1), 1, True)
+            take_inputs.update({"video_mode": "extend_after", "anchor": "end", "end_image": ["7", 0]})
+        elif link["mode"] == "bridge":
+            end = end_hold(link)
+            graph["7"] = load_node(link["b"], end, False)
+            take_inputs.update({"end_video": ["7", 0], "end_audio": ["7", 1], "end_hold": ["7", 2]})
+            if end != hold:
+                # A short run of the next clip, picture and sound: enough to say where things are and how they
+                # move, and too little for H3 to take for another shot. It needs no guide frame beside it.
+                take_inputs["end_hold_frames"] = end
+            else:
+                # A hold alone does not make the take arrive. The guide tells H3 what it must land on.
+                graph["8"] = {"class_type": "ImageFromBatch", "inputs": {"image": ["7", 0], "batch_index": 0, "length": 1}}
+                take_inputs.update({"mid_frames": str(length - hold), "mid_images.mid_image_0": ["8", 0]})
     track = clip.get("track")
     if track:
         # The picture is generated to this slice of the track, laid from the take's first frame.
@@ -927,7 +966,7 @@ def render_graph(project, folder, clip, take, quality, seed, available=None):
         graph["61"] = {"class_type": "H3LoadSound", "inputs": {
             "file": file, "start": float(track.get("from") or 0), "seconds": round(length / float(FPS) + 1.0, 3)}}
         take_inputs.update({"audio_hold": "full", "audio_align": "take", "source_audio": ["61", 0]})
-        if link and link["mode"] == "bridge":
+        if link and link["mode"] == "bridge" and not arrives_on_pin(link):
             take_inputs["end_audio"] = ["61", 0]
     if size.get("refine") and models.get("latent_upscaler") and installed(models["latent_upscaler"], available):
         # Without the latent upscaler a final stays at H3's own size.
@@ -957,8 +996,9 @@ def add_refine(graph, size, tail, upscaler):
     """Enlarge the sampled latent and redraw its last steps at that size, keeping the sound.
 
     A second take at the refine size gives the conditioning there (pinned frames and pictures
-    at that size) and its held frames. The picture comes out at the refine size, and the sound
-    is the first pass's. tail is the step in the final's own sigmas the redraw starts from, or
+    at that size) and its held frames: the refined latents of the clip it joins, when that clip
+    was refined at this size, and its video otherwise. The picture comes out at the refine size,
+    and the sound is the first pass's. tail is the step in the final's own sigmas the redraw starts from, or
     the sigmas it runs, as text.
     """
     width, height = size
@@ -979,6 +1019,8 @@ def add_refine(graph, size, tail, upscaler):
         "91": {"class_type": "VAEDecode", "inputs": {"samples": ["90", 0], "vae": ["3", 0]}},
     })
     graph["18"]["inputs"]["images"] = ["91", 0]
+    # The refined picture is saved with the take as well: a clip that extends this one holds it in its own refine.
+    graph["20"]["inputs"]["final"] = ["90", 0]
 
 
 def add_sharp(graph, size, available=None):
@@ -1008,6 +1050,33 @@ def active_take(clip):
         if take.get("id") == clip.get("active"):
             return take
     return takes[-1] if takes else None
+
+
+def project_card(project):
+    """What a list of projects shows for one of them: its name, shape, length, and a picture to know it by.
+
+    The picture is the first rendered clip on the timeline, or failing that the first rendered clip anywhere.
+    """
+    clips = {clip.get("id"): clip for clip in project.get("clips") or [] if isinstance(clip, dict)}
+    frames, placed, picture = 0, 0, None
+    for item in sorted((i for i in project.get("timeline") or [] if isinstance(i, dict)), key=lambda i: i.get("start") or 0):
+        try:
+            frames = max(frames, int(item.get("start") or 0) + item_length(item))
+        except (KeyError, TypeError, ValueError):
+            continue
+        placed += 1
+        picture = picture or take_picture(clips.get(item.get("clip")))
+    for clip in clips.values():
+        picture = picture or take_picture(clip)
+    return {"name": str(project.get("name") or ""), "format": project.get("format") if project.get("format") in FORMATS else "16:9",
+            "clips": placed, "frames": frames, "picture": picture, "rendering": len(project.get("pending") or [])}
+
+
+def take_picture(clip):
+    take = active_take(clip or {})
+    if not take or not take.get("poster"):
+        return None
+    return {"file": take["poster"], "subfolder": take.get("subfolder") or ""}
 
 
 TRANSITIONS = {"dissolve": "fade", "black": "fadeblack", "wipe": "wipeleft"}
@@ -1576,6 +1645,16 @@ CAST_PICTURES = 8
 H3_PICTURES = 9
 BIN_FIELDS = ("name",)
 LINK_MODES = ("extend_after", "extend_before", "bridge", "merge")
+# How a bridge reaches the next clip: on a short run of its first frames (see end_hold), on its first frame alone,
+# pinned (see arrives_on_pin), or on as many frames as it holds of the first clip.
+ARRIVALS = ("short", "pin", "hold")
+# The short run: 22 frames, a 17-frame group of the latent and the 5 frames before the next, so a take of 39 + 51k
+# frames can end on it. The cut then sits a handover inside it, clear of the frames a decoder draws badly.
+END_HOLD = 22
+# A bridge that arrives on a pinned frame gets 153 new frames unless told otherwise. A move between two framings
+# needs the room: at 102 new frames a push-in from a wide shot to a close-up came out as one shot in 0 of 6 takes
+# (it dissolved or cut instead), and at 153 in 4 of 6.
+BRIDGE_SECONDS = 6.375
 LINK_TITLES = {"extend_after": "After ", "extend_before": "Before ", "bridge": "Bridge from ", "merge": "Merge from "}
 SAVED_FIELDS = ("action", "camera", "speaker", "dialogue", "sound", "music", "seconds", "cast", "track")
 
@@ -1664,7 +1743,10 @@ def linked_range(link, frames):
         return hold - over, frames
     if link["mode"] == "extend_before":
         return 0, frames - hold + over
-    return hold - over, frames - hold + over
+    if arrives_on_pin(link):
+        # The last frame is the next clip's own first frame, which that clip shows itself.
+        return hold - over, frames - 1
+    return hold - over, frames - end_hold(link) + over
 
 
 def planned_frames(clip):
@@ -2011,6 +2093,9 @@ def side_cut(link, key):
     side, over = link[key], link_handover(link)
     if is_tail(link, key):
         return "out", side["last"] - over
+    if key == "b" and arrives_on_pin(link):
+        # Nothing of the next clip is held, so it stays cut where it is: its first frame is the pin.
+        return "in", side["first"]
     return "in", side["first"] + over
 
 
@@ -2080,11 +2165,15 @@ def join_side(project, link, key, item, snap=True):
     tail, over = is_tail(link, key), link_handover(link)
     snap = snap and find_clip(project, item["clip"]).get("kind") != "footage"
     side = side_of(project, item)
+    if key == "b" and arrives_on_pin(link):
+        # A bridge that arrives on a pinned frame leaves the next clip as it is cut.
+        link[key] = side
+        return side
     if tail:
         side["last"] = holds.snap_out(item["out"], HOLD, item["in"]) if snap else item["out"]
         which, cut = "out", side["last"] - over
     else:
-        side["first"] = holds.snap_in(item["in"], HOLD, item["out"]) if snap else item["in"]
+        side["first"] = holds.snap_in(item["in"], end_hold(link) if key == "b" else HOLD, item["out"]) if snap else item["in"]
         which, cut = "in", side["first"] + over
     if (cut <= item["in"]) if tail else (cut >= item["out"]):
         raise ValueError("%s is too short on the timeline to carry on from" % find_clip(project, item["clip"])["name"])
@@ -2096,10 +2185,18 @@ def join_side(project, link, key, item, snap=True):
     return side
 
 
-def add_linked(project, item_id, mode, seconds=None, action=""):
-    """Extend a clip forward or back, bridge it to the next one, or merge the two with a generated crossing."""
+def add_linked(project, item_id, mode, seconds=None, action="", arrive=None):
+    """Extend a clip forward or back, bridge it to the next one, or merge the two with a generated crossing.
+
+    arrive is how a bridge reaches the next clip: "short", the default, on a short run of its first frames (see
+    end_hold), "pin" on its first frame alone (see arrives_on_pin), or "hold" on as many as of the first clip.
+    """
     if mode not in LINK_MODES:
         raise ValueError("mode must be one of %s" % ", ".join(LINK_MODES))
+    if arrive not in (None, "") and mode != "bridge":
+        raise ValueError("arrive is for a bridge")
+    if arrive not in (None, "") + ARRIVALS:
+        raise ValueError("arrive must be one of %s" % ", ".join(ARRIVALS))
     item = find_item(project, item_id)
     source = find_clip(project, item["clip"])
     side_of(project, item)        # refuses a source that is not rendered
@@ -2109,8 +2206,9 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
     if mode in ("bridge", "merge"):
         if not nxt or not active_take(find_clip(project, nxt["clip"])):
             raise ValueError("%s needs a rendered clip after this one" % mode)
-        if item_length(nxt) < HOLD:
-            raise ValueError("the next clip needs at least %s frames on the timeline" % HOLD)
+        need = HOLD if mode == "merge" or arrive == "hold" else 1 if arrive == "pin" else END_HOLD
+        if item_length(nxt) < need:
+            raise ValueError("the next clip needs at least %s frames on the timeline" % need)
     if mode == "merge":
         away = (MERGE_FRAMES + 1) // 2
         rest = MERGE_FRAMES - away
@@ -2126,10 +2224,14 @@ def add_linked(project, item_id, mode, seconds=None, action=""):
         seconds = 2.625
 
     link = {"mode": "bridge" if mode == "merge" else mode, "hold": HOLD, "handover": HANDOVER}
+    if mode == "bridge" and arrive == "pin":
+        link["arrive"] = "pin"
+    elif mode == "bridge" and arrive != "hold":
+        link.update({"arrive": "short", "end_hold": END_HOLD})
     join_side(project, link, "a", item, snap=mode != "merge")
     if nxt:
         join_side(project, link, "b", nxt, snap=mode != "merge")
-    seconds = float(seconds if seconds is not None else 4.25)
+    seconds = float(seconds if seconds is not None else BRIDGE_SECONDS if link.get("arrive") else 4.25)
     if not math.isfinite(seconds) or not 0.5 <= seconds <= 60:
         raise ValueError("seconds must be between 0.5 and 60")
     default = "One continuous shot that moves naturally from the opening frames into the closing frames." if mode == "merge" else ""
@@ -3178,7 +3280,7 @@ def apply_op(project, op, names):
     elif kind == "close_gap":
         result = {"removed": close_gap(project, op.get("frame"))}
     elif kind in LINK_MODES:
-        clip, item = add_linked(project, item_id, kind, op.get("seconds"), op.get("action") or "")
+        clip, item = add_linked(project, item_id, kind, op.get("seconds"), op.get("action") or "", op.get("arrive"))
         if op.get("fields"):
             update_clip(project, clip["id"], op["fields"])
         result = {"clip": clip["id"], "item": item["id"]}

@@ -94,6 +94,11 @@ class PolicyTest(unittest.TestCase):
         self.assertIn("extend_both", str(caught.exception))
 
     def test_a_bridge_holds_both_ends(self):
+        first, last = bridge_spans(73, 73, 192, end_hold_frames=5)
+        # 39 frames of the first clip at the start, 5 of the second at the very end, on the 17-frame grid.
+        self.assertEqual((first["hold"], first["insert"], last["hold"], last["insert"]), (39, 0, 5, 187))
+        self.assertEqual((first["generate_after"], last["generate_before"], last["insert"] % 17), (148, 148, 0))
+        self.assertEqual(bridge_spans(73, 73, 192, end_hold_frames=22)[1]["insert"], 170)
         first, last = bridge_spans(73, 73, 141)
         self.assertEqual((first["insert"], first["hold"], first["source_start"]), (0, 39, 34))
         self.assertEqual((last["insert"], last["hold"], last["source_start"]), (102, 39, 0))
@@ -175,6 +180,12 @@ class PolicyTest(unittest.TestCase):
 
     def test_span_audio_follows_the_held_video(self):
         span = video_span("extend_after", source_frames=124, length=192, hold_frames=39)
+        # A hold that starts between two ticks: its sound starts on the next tick, a third of a tick into the source.
+        late = bridge_spans(73, 73, 192, end_hold_frames=22)[1]
+        window = audio_window("span", late, 192, 22 / 24)
+        self.assertEqual((late["insert"], window["first"], window["ticks"]), (170, 284, 36))
+        self.assertAlmostEqual(window["source_second"], (284 - 170 * 40 / 24) / 40, places=6)
+        self.assertAlmostEqual(window["first"] / 40 - window["source_second"], 170 / 24, places=6)
         window = audio_window("span", span, 192, 124 / 24)
         self.assertEqual(window["first"], 0)
         self.assertEqual(window["ticks"], 65)

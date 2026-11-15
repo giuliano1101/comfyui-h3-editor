@@ -126,6 +126,19 @@ class ProjectTest(unittest.TestCase):
         join = joins.project_joins(project())[2]
         self.assertEqual((join["a"][2], join["b"][2]), (0, 102))
 
+    def test_a_bridge_that_holds_a_short_run_is_measured_over_that_run(self):
+        data = project()
+        bridge = next(c for c in data["clips"] if c["name"] == "Bridge")
+        bridge["link"].update({"arrive": "short", "end_hold": 22})
+        join = joins.project_joins(data)[2]
+        self.assertEqual((join["count"], join["a"][2], join["b"][2]), (22, 0, 141 - 22))
+
+    def test_a_bridge_that_arrives_on_a_pinned_frame_has_one_join(self):
+        data = project()
+        bridge = next(c for c in data["clips"] if c["name"] == "Bridge")
+        bridge["link"]["arrive"] = "pin"
+        self.assertEqual([(j["name"], j["tail"]) for j in joins.project_joins(data)], [("After One", True), ("Bridge", True)])
+
     def test_a_join_with_a_handover_is_found_where_its_source_stops_early(self):
         data = project()
         data["clips"][1]["link"]["handover"] = 6

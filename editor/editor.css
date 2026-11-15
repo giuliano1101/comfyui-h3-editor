@@ -48,6 +48,38 @@ button:disabled { opacity: 0.42; cursor: default; }
 .app { display: grid; grid-template-rows: 48px minmax(0, 1fr) 6px calc(var(--tl-h) + var(--tl-extra, 0px)); height: 100vh; }
 .bar { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .bar select { min-width: 220px; padding: 5px 9px; background-color: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); font-weight: 600; }
+/* The project picker: a button that names the open project beside a frame of it, and a list of every project. */
+.project-button { display: flex; align-items: center; gap: 8px; min-width: 220px; max-width: 340px; height: 32px; padding: 0 8px 0 4px; background: var(--raised); border: 1px solid var(--line); text-align: left; }
+.project-button:hover, .project-button[aria-expanded="true"] { background: var(--hover); }
+.project-button svg { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: rotate 0.16s ease-out; }
+.project-button[aria-expanded="true"] svg { rotate: 180deg; }
+.project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.project-shot { flex: none; display: block; width: 36px; height: 24px; overflow: hidden; border-radius: 3px; background: #000 50% 30% / cover no-repeat; }
+.project-shot.empty { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 4px, transparent 4px 8px), var(--room); box-shadow: inset 0 0 0 1px var(--line); }
+.project-shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
+.menu.project-list { width: 420px; max-width: calc(100vw - 16px); padding: 0; overflow: hidden; }
+.menu.project-list:popover-open { display: flex; flex-direction: column; }
+.project-find { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.project-find:focus-within { border-bottom-color: var(--tungsten); }
+.project-find svg { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.75; stroke-linecap: round; }
+.project-find input { flex: 1; min-width: 0; height: 38px; padding: 0; background: transparent; border: 0; outline: none; }
+.project-find input::placeholder { color: var(--muted); opacity: 1; }
+.project-list .project-count { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.project-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.project-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 5px 10px 5px 5px; border-radius: var(--radius); cursor: pointer; }
+.project-row.active { background: var(--raised); }
+.project-row .project-shot { width: 72px; height: 44px; border-radius: 4px; }
+.project-list .project-text { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
+.project-list .project-title { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text); font-size: 13px; }
+.project-title b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.project-row[aria-selected="true"] .project-title b { font-weight: 600; }
+.project-title svg { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--tungsten); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.project-list .project-facts { display: flex; gap: 12px; min-width: 0; overflow: hidden; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.project-list .project-live { display: flex; align-items: center; gap: 5px; color: var(--live); }
+.project-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--live); }
+.project-list .project-when { align-self: start; padding-top: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.project-none { margin: 0; padding: 14px 10px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .project-button svg { transition: none; } }
 .checks-chip { display: flex; align-items: center; gap: 8px; padding: 5px 10px; background: transparent; border: 1px solid var(--line); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .checks-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .checks-chip.bad::before { background: var(--danger); }

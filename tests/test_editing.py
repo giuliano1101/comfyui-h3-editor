@@ -158,10 +158,86 @@ class LinkedTest(unittest.TestCase):
         self.assertEqual(second["start"], item_end(item))
         self.assertEqual(store.scene_end(project), 124 + 102 + 124)
 
-    def test_a_bridge_hands_over_at_both_ends(self):
+    def test_a_bridge_arrives_on_a_short_run_of_the_next_clip(self):
         project = scene(124, 124)
         first, second = store.ordered(project)
         clip, item = add_linked(project, first["id"], "bridge")
+        self.assertEqual((clip["link"]["arrive"], clip["link"]["end_hold"], clip["seconds"]), ("short", 22, 6.375))
+        # Both clips hand over 9 frames inside what the bridge holds of them: 39 frames of the first, 22 of the next.
+        self.assertEqual((first["out"], second["in"]), (115, 9))
+        self.assertEqual((clip["link"]["b"]["first"], item["in"], item["out"]), (0, 30, 192 - 22 + 9))
+        self.assertEqual((item["start"], second["start"]), (item_end(first), item_end(item)))
+
+    def test_a_bridge_to_a_trimmed_clip_moves_its_start_onto_the_grid(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        second["in"] = 3
+        clip, _ = add_linked(project, first["id"], "bridge")
+        self.assertEqual((clip["link"]["b"]["first"], second["in"]), (17, 26))
+
+    def test_a_bridge_needs_22_frames_of_the_next_clip(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        second["out"] = 20
+        with self.assertRaisesRegex(ValueError, "at least 22 frames"):
+            add_linked(project, first["id"], "bridge")
+
+    def test_a_bridge_can_arrive_on_one_pinned_frame(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        clip, item = add_linked(project, first["id"], "bridge", arrive="pin")
+        self.assertEqual(clip["link"]["arrive"], "pin")
+        # The first clip hands over as for an extension. The next clip is not touched: its first frame is the pin.
+        self.assertEqual((first["out"], second["in"]), (115, 0))
+        self.assertEqual(clip["link"]["b"]["first"], 0)
+        # 39 held frames and 153 new ones, the last of them the pinned frame, which the next clip shows itself.
+        self.assertEqual((clip["seconds"], item["in"], item["out"]), (6.375, 30, 192 - 1))
+        self.assertEqual((item["start"], second["start"]), (item_end(first), item_end(item)))
+
+    def test_a_bridge_to_a_trimmed_clip_leaves_its_cut_alone(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        first["out"], second["in"] = 110, 3
+        clip, _ = add_linked(project, first["id"], "bridge", arrive="pin")
+        self.assertEqual((clip["link"]["a"]["last"], clip["link"]["b"]["first"]), (107, 3))
+        self.assertEqual((first["out"], second["in"]), (98, 3))
+
+    def test_a_bridge_can_arrive_on_a_short_clip(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        second["out"] = 20
+        add_linked(project, first["id"], "bridge", arrive="pin")
+        held = scene(124, 124)
+        first, second = store.ordered(held)
+        second["out"] = 20
+        with self.assertRaisesRegex(ValueError, "at least 39 frames"):
+            add_linked(held, first["id"], "bridge", arrive="hold")
+
+    def test_a_trimmed_arrival_makes_the_bridge_stale_and_is_pinned_again(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        clip, item = add_linked(project, first["id"], "bridge", arrive="pin")
+        accept_take(project, clip["id"], take("tb", 192))
+        self.assertFalse(store.is_stale(project, clip))
+        second["in"] = 12
+        self.assertTrue(store.is_stale(project, clip))
+        store.refresh_link(project, clip)
+        self.assertEqual((clip["link"]["b"]["first"], second["in"]), (12, 12))
+        self.assertFalse(store.is_stale(project, clip))
+
+    def test_arrive_is_for_bridges(self):
+        project = scene(124, 124)
+        first = store.ordered(project)[0]
+        with self.assertRaisesRegex(ValueError, "for a bridge"):
+            add_linked(project, first["id"], "extend_after", arrive="pin")
+        with self.assertRaisesRegex(ValueError, "one of short, pin, hold"):
+            add_linked(project, first["id"], "bridge", arrive="glide")
+
+    def test_a_bridge_that_holds_hands_over_at_both_ends(self):
+        project = scene(124, 124)
+        first, second = store.ordered(project)
+        clip, item = add_linked(project, first["id"], "bridge", arrive="hold")
+        self.assertNotIn("arrive", clip["link"])
         self.assertEqual((first["out"], second["in"]), (115, 9))
         self.assertEqual((item["in"], item["out"]), (30, 192 - 39 + 9))
         self.assertEqual((item["start"], second["start"]), (item_end(first), item_end(item)))
@@ -193,11 +269,11 @@ class LinkedTest(unittest.TestCase):
         self.assertEqual(second["in"], 43)
         self.assertEqual(second["start"], item_end(item))
 
-    def test_a_bridge_moves_both_cuts_onto_the_latent_grid(self):
+    def test_a_bridge_that_holds_moves_both_cuts_onto_the_latent_grid(self):
         project = scene(124, 124)
         first, second = store.ordered(project)
         first["out"], second["in"] = 110, 3
-        clip, _ = add_linked(project, first["id"], "bridge")
+        clip, _ = add_linked(project, first["id"], "bridge", arrive="hold")
         self.assertEqual((clip["link"]["a"]["last"], clip["link"]["b"]["first"]), (107, 17))
         self.assertEqual((first["out"], second["in"]), (98, 26))
 

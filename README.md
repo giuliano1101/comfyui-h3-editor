@@ -152,7 +152,9 @@ the catalog. A copy you changed in its project is never overwritten without you.
 
 **Joining shots.** Select a clip on the timeline, open **Generate** and choose **Extend forward** or
 **Extend back** to generate what happens next or before. **Bridge to next**
-generates what connects it to the following clip, and **Merge with next**
+generates what leads from it into the following clip, landing on a short run of
+its first frames, and **Bridge into its movement** holds more of them, for a
+following clip that starts in mid-movement. **Merge with next**
 replaces the join between two clips with a generated crossing. These clips hold
 39 real frames and their sound from the clips they join, so the cut does not
 show. If a clip they join changes, they are marked: render them again. An empty

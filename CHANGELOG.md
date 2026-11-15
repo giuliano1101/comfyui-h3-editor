@@ -9,6 +9,16 @@ Each release is a tag on GitHub, `v` followed by the version.
 
 ### Added
 
+- **Finals join finals without a decode in between.** A final is sampled
+  twice: at H3's own size, then enlarged and refined at up to 1920 pixels. A
+  final that extends or bridges another final held its source's latents in
+  the first pass only; for the refine pass it read the source's video and
+  encoded it again at the large size. A refined final now saves that pass's
+  latents too, and the next final holds them in its own refine pass. The file
+  beside a 5 second final grows to about 22 MB. Finals rendered before this
+  are held from their video in the refine pass as before, so render a source
+  again to get the benefit.
+
 - **The cast catalog.** Save a cast member with **Save** beside **Catalog**, and
   bring them into any project with **Add**, **From the catalog**. A project gets
   its own copy of their pictures and voice, linked to the catalog. After a
@@ -46,15 +56,83 @@ Each release is a tag on GitHub, `v` followed by the version.
   the step in the sound at the cut fell from 7 to 22 times the steps around
   it to under 3. Joins made before keep their cut. Render a linked
   clip again after trimming its source and it is joined at the new cut.
+- **The cuts report listens.** Every cut now has a sound score beside its
+  picture score (`listen.py`): the level on each side as loudness after ITU-R
+  BS.1770, the step between them against how much the sound moves by itself
+  around the cut, how much the spectrum changes shape, and whether the wave
+  clicks. A cut where the sound falls 36 dB in one frame scores 0 as a
+  `level jump`, a cut to another place with the level held is a `new sound`,
+  and sound into silence is a `dropout`. Inside a take it reports a sound
+  that is cut off (a fast fall that stays down; sounds that start at once
+  are left alone), a hole in the sound, and a take that ends 20 dB or more
+  louder or quieter than it began. `GET /project/{name}/cuts` carries these
+  as `sound` on each cut and as `sound_inside`, `h3.py cuts` prints them,
+  and `worst` counts them.
+- **The report reads the camera's move at a cut.** From the optical flow of
+  the whole frame (Lucas and Kanade's method, solved for one pan and one zoom
+  per frame, with moving subjects weighted down) it says how the camera
+  moves on each side of a cut, in words (pushing in, pulling back, panning,
+  tilting, still), and whether the move carries on, stops, starts or
+  reverses. Inside one shot that is scored, against how much the move varies
+  by itself around the cut, as a handheld shot does; at a cut to a new shot
+  it is only described. It is `movement` on each cut. It reads the camera,
+  not what moves inside the frame.
+- **The report sees what stops moving at a cut.** With the camera's own
+  move taken out, it looks at what is left in each of 72 parts of the frame:
+  rain behind a window, a wave, a beam of light. Something that moves on one
+  side of a cut and is still on the other is reported with where it is
+  ("what moves in the upper middle of the frame before the cut is still
+  after it"), and scored inside one shot. It is `parts` on each cut.
+- **The report says whether a bridge arrived.** For a bridge that ends on a
+  pinned frame, `arrivals` says whether the take got there: a take still
+  fading up when it ends lands darker than its pin, and a jump at the
+  hand-over means the frames before the pin did not lead to it.
 - **A measure for joins.** `python joins.py PROJECT_FOLDER` compares the two
   copies of the frames every join holds, the source's and the new take's:
   whether the latents are the same, how alike the decoded pictures are frame
   by frame, how much darker or softer the new take's copy is, and whether the
   sound carries on or clicks at the cut. It reads the files and changes
   nothing.
+- **A project list you can see.** The project menu in the top bar is now a
+  list of the editor's own: each project with a frame of its first rendered
+  clip, its shape, how many clips are on its timeline, how long it runs and
+  when it last changed. The open project leads and the rest follow by last
+  change. Type to narrow the list by name, move with the arrow keys and open
+  with Enter. `GET /projects` returns the same facts for each project under
+  `cards`.
 
 ### Changed
 
+- **A bridge lands on the next clip.** A bridge used to hold the next clip's
+  first 39 frames at its end, as it holds the first clip's last 39 at its
+  start. H3 treats a run that long from another shot as another shot: in 8 of
+  9 test pairs it followed the prompt and then cut to the next clip a few
+  frames early, so the bridge was an extension with a cut at its end.
+  **Bridge to next** now holds a short run of the next clip, 22 frames with
+  their sound, and the timeline cuts 9 frames inside it. That is enough to
+  say where things are and how they move, and too little for H3 to take for
+  another shot. On two test pairs over three seeds each, the cut into the
+  next clip scored 97 to 99 of 100 for the picture and 78 to 97 for the
+  sound, and what moves in the frame carried across it every time. One
+  pinned frame, tried first, scored 71 to 97 and 0 to 90: the take landed on
+  it dark and silent, with the sound dropping up to 36 dB at the cut. A new
+  bridge is 6.4 seconds unless you set its seconds, because a move between
+  two framings needs the room. What happens inside the bridge still depends
+  on the seed: it may push in, dissolve or cut on the way, so look at it and
+  render it again when it does not move as you asked. The held sound is
+  encoded from the next clip's file, not taken from its latents, and can
+  step a little at the cut. **Bridge into its movement**, new in the
+  Generate menu, holds 39 frames of the next clip as before. Agents pass
+  `"arrive": "hold"` to `bridge` for that, or `"arrive": "pin"` for one
+  pinned frame, which leaves the next clip untrimmed. Bridges made before
+  keep their way of arriving.
+- **LoRA starts follow where the render's steps are.** H3 samples with a
+  shift that keeps most of a render near the start of the scale: a start of
+  0.75 was already four fifths of the way in. **After framing** is now 0.93,
+  about halfway, and **Details only** 0.7. A final's Realism Slider joins at
+  0.93 instead of 0.75: of HyperFlow's six steps it now works on the last
+  four, where it used to work on the last three. A start you set yourself
+  stays as it is.
 - **Extending from a trimmed clip moves the cut onto the latent's grid.**
   Extend forward, Extend back and Bridge move the end they carry on from back,
   and the start they arrive at forward, by 16 frames at most (two thirds of a

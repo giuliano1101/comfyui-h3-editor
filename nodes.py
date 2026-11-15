@@ -106,6 +106,7 @@ class H3Take(io.ComfyNode):
                 io.Latent.Input("end_hold", optional=True, tooltip="The same for end_video."),
                 io.Latent.Input("carry", optional=True, tooltip="A finished H3 latent. Its last hold_frames open this take, with no re-encode. Leave video_mode off."),
                 io.Int.Input("hold_frames", default=39, min=5, max=3600, step=1),
+                io.Int.Input("end_hold_frames", default=0, min=0, max=3600, step=1, optional=True, tooltip="With video_mode bridge: how many frames of end_video the take holds at its end, when that is fewer than hold_frames. 5 or 22 fit a take of 39 + 51k frames. 0 holds as many as hold_frames."),
                 io.Combo.Input("strength", options=list(STRENGTHS) + ["custom"], default="hold", tooltip="How much the held video may change. light tints it, medium and heavy keep the shot but follow the prompt, regenerate keeps nothing."),
                 io.Float.Input("keep", default=0.0, min=0.0, max=1.0, step=0.0001, tooltip="Raw mask value, read only when strength is custom. The useful range is about 0.95 to 0.996."),
                 io.Combo.Input("align", options=["av", "video"], default="av", tooltip="av snaps holds to 39, 90, 141, so picture and sound share a boundary."),
@@ -143,7 +144,7 @@ class H3Take(io.ComfyNode):
                 hold_frames, strength, keep, align, video_feather, audio_hold, audio_feather, ref_image_size,
                 audio_vae=None, start_image=None, end_image=None, mid_images=None, source_video=None, end_video=None,
                 end_audio=None, carry=None, region=None, source_audio=None, ref_images=None, ref_videos=None, ref_video_audios=None,
-                ref_audios=None, audio_align="video", source_hold=None, end_hold=None) -> io.NodeOutput:
+                ref_audios=None, audio_align="video", source_hold=None, end_hold=None, end_hold_frames=0) -> io.NodeOutput:
         keep = resolve_keep(strength, keep)
         second = None
         if video_mode == "bridge":
@@ -151,7 +152,7 @@ class H3Take(io.ComfyNode):
                 raise ValueError("a bridge needs source_video and end_video")
             span, end_span = bridge_spans(
                 frame_count(source_video, "source video"), frame_count(end_video, "end video"),
-                length, hold_frames=hold_frames, align=align, keep=keep,
+                length, hold_frames=hold_frames, align=align, keep=keep, end_hold_frames=end_hold_frames or None,
             )
             window = audio_window(audio_hold, span, length, audio_seconds(source_audio), audio_align)
             end_window = audio_window(audio_hold, end_span, length, audio_seconds(end_audio), audio_align)
@@ -403,18 +404,19 @@ class H3SaveHold(io.ComfyNode):
             inputs=[
                 io.Latent.Input("latent", tooltip="The sampled take, before it is decoded."),
                 io.String.Input("file", tooltip="Path inside the output folder. Name it after the take's video."),
+                io.Latent.Input("final", optional=True, tooltip="For a take that is enlarged and refined: the latent after the refine pass. A take that extends this one holds it in its own refine pass."),
             ],
             outputs=[],
             is_output_node=True,
         )
 
     @classmethod
-    def execute(cls, latent, file) -> io.NodeOutput:
+    def execute(cls, latent, file, final=None) -> io.NodeOutput:
         base = os.path.realpath(folder_paths.get_output_directory())
         path = os.path.realpath(os.path.join(base, file))
         if not path.startswith(base + os.sep) or not path.endswith(".safetensors"):
             raise ValueError("%s is not a .safetensors path inside the output folder" % file)
-        holds.save(path, latent["samples"])
+        holds.save(path, latent["samples"], final["samples"] if final is not None else None)
         return io.NodeOutput()
 
 

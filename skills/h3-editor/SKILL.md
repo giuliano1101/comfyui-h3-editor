@@ -207,19 +207,32 @@ frames and their sound, so the join does not show. The source item must be rende
 |---|---|
 | `extend_after` | The shot should carry on: what happens next, same camera |
 | `extend_before` | You need what led up to a shot |
-| `bridge` | Two rendered shots should connect through new footage. It is placed between them and pushes the later one along |
+| `bridge` | Two rendered shots should connect through new footage. It is placed between them, pushes the later one along, and lands on the later one's first frames |
 | `merge` | Two side-by-side shots should become one continuous move. It replaces their join and keeps the length of the scene |
 
 A take keeps its latents as sampled, picture and sound, so a linked clip holds them with
 no loss. They can be held from any cut on a multiple of 17 frames, so extending or bridging
 a trimmed clip moves that cut by up to 16 frames to reach one: read the new `in` and `out`
 from the summary. It only works when the source was rendered at the same quality as the
-linked clip, and a merge or imported footage is always read from the video, which darkens
-and softens the join slightly. The timeline also cuts 9 frames inside the held frames, so
+linked clip (a draft from a draft, a final from a final), and a merge or imported footage
+is always read from the video, which darkens and softens the join slightly. The timeline also cuts 9 frames inside the held frames, so
 a source item ends 9 frames before the frames it lent and the linked item starts at 30.
 Even so, a long single shot drifts. Past about 30 seconds
 the room starts to change, and the model sometimes cuts to another framing on the first new
 frame. Check every join with `cuts`, and render a low-scoring extension again with another seed.
+
+A bridge lands on a short run of the next clip's first frames, picture and sound, so say
+in its `action` how the camera or the subject gets there ("the camera pushes in from the
+wide shot to her hands"), and end on what the next clip opens with, not on something it
+does not show. It works best when the two shots share a place, or when the move passes
+through something that hides the change (into the dark of a cup, through a window). Two
+shots with nothing in common still cut. What happens on the way depends on the seed: read
+`cuts` after rendering (`inside` for a cut or fade inside the bridge, `sound`, `movement`
+and `parts` on the cut into the next clip), look at the take, and render again with
+another seed when it dissolves or cuts instead of moving. Leave `seconds` out, or keep it
+at 6 or more. When the next clip starts in mid-movement (a car already turning), add
+`"arrive": "hold"`: the bridge then holds 39 frames of it, which keeps the movement going
+but more often arrives with a cut.
 
 Give each one an `action` describing the new part, plus `seconds` for extend and bridge.
 Linked clips render like any other. When a source changes later, the summary marks the

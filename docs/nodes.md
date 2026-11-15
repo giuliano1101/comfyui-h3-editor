@@ -8,7 +8,7 @@ below. You can use them in your own workflows too.
 | H3 Take | One shot: the prompt, pinned frames, references, held video or sound |
 | H3 Live Preview | Shows the whole clip moving, with sound, at every sampling step |
 | H3 Load Clip | Reads frames and sound from a clip in the output folder, and the saved latents of those frames when they start on a multiple of 17 frames |
-| H3 Save Hold | Saves a sampled take's latents, picture and sound, beside its video, for clips that extend or bridge it |
+| H3 Save Hold | Saves a sampled take's latents, picture and sound, beside its video, for clips that extend or bridge it. Connect `final` to save a refine pass's picture too |
 | H3 Load Still | Reads a picture from the output folder |
 | H3 Load Sound | Reads a sound from the output folder, such as a cast voice |
 | H3 LoRA | Applies an H3 LoRA, wherever it can land on the model; see [models](models.md#loras) |
@@ -53,6 +53,9 @@ on the graph. The editor builds the same graph for each clip.
 | New frames after the clip | `video_mode=extend_after` |
 | New frames before the clip | `video_mode=extend_before` |
 | New frames on both sides | `video_mode=extend_both` |
+| New frames that lead from one clip into another | `video_mode=bridge`, the first clip as `source_video`, the other as `end_video`, and `end_hold_frames=22`: the take holds 39 frames of the first and a short run of the other, with their sound. Take lengths of 39 + 51k frames fit (141, 192, 243) |
+| The same, holding as much of the other clip as of the first | `video_mode=bridge` with `end_hold_frames=0`. H3 tends to cut to a long run of another shot's frames, so use this when the other clip carries on the same movement |
+| The same, ending on one frame of the other clip | `video_mode=extend_after`, `anchor=end`, and that frame as `end_image`. The take moves into it, but lands with no movement or sound of the other clip |
 | Keep the clip's sound over the held frames | `audio_hold=span`, connect `source_audio` |
 | Generate picture to an existing track | `audio_hold=full`, connect `source_audio` |
 | New sound on the same picture | `video_mode=v2v`, `strength=hold`, `audio_hold=off` |

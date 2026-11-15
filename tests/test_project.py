@@ -128,7 +128,11 @@ class ProjectTest(unittest.TestCase):
 
     def test_a_final_samples_both_passes_with_the_realism_slider(self):
         graph = render_graph(new_project("x"), "x", clip(), "t1", "final", 3)
-        self.assertEqual(graph["95"]["inputs"], {"model": ["1", 0], "lora_name": MODELS["lora"], "strength": 1.2, "start_sigma": 0.75})
+        self.assertEqual(graph["95"]["inputs"], {"model": ["1", 0], "lora_name": MODELS["lora"], "strength": 1.2, "start_sigma": 0.93})
+        # HyperFlow's six steps after the video shift of 12. The slider must reach most of them: at a
+        # start of 0.75 it only joined for the last three, and finals came out nearly as without it.
+        steps = [1.0, 0.983, 0.915, 0.675, 0.385, 0.159]
+        self.assertGreaterEqual(sum(1 for s in steps if s <= graph["95"]["inputs"]["start_sigma"]), 4)
         self.assertEqual(graph["5"]["inputs"]["model"], ["95", 0])
         used = render_models(graph)
         self.assertEqual((used["lora"], used["lora_strength"]), (MODELS["lora"], 1.2))
@@ -1064,6 +1068,41 @@ class LinkTest(unittest.TestCase):
         graph = render_graph(new_project("x"), "x", clip(link=link, seconds=2), "t1", "draft", 3)
         self.assertEqual((graph["6"]["inputs"]["first"], graph["6"]["inputs"]["last"]), (10, 49))
 
+    def test_a_bridge_ends_on_the_next_clips_first_frame_pinned(self):
+        link = {"mode": "bridge", "hold": 39, "arrive": "pin", "a": self.side, "b": dict(self.side, file="b.mp4", first=12)}
+        graph = render_graph(new_project("x"), "x", clip(link=link, seconds=3), "t1", "draft", 3)
+        take = graph["10"]["inputs"]
+        # The first clip is held as for an extension, and nothing of the next clip is.
+        self.assertEqual((take["video_mode"], take["source_video"], take["source_hold"]), ("extend_after", ["6", 0], ["6", 2]))
+        self.assertEqual(graph["6"]["inputs"]["first"], 34)
+        for name in ("end_video", "end_audio", "end_hold", "mid_images.mid_image_0"):
+            self.assertNotIn(name, take)
+        # One frame of the next clip, where it is cut, is the take's last frame.
+        self.assertEqual(graph["7"]["inputs"], {"file": "p/clips/b.mp4", "first": 12, "last": 13})
+        self.assertEqual((take["anchor"], take["end_image"], take["mid_frames"]), ("end", ["7", 0], ""))
+        self.assertEqual(take["length"], linked_length(link, 3))
+        self.assertEqual((take["length"] - 39) % 51, 0)
+
+    def test_a_bridge_ends_on_a_short_run_of_the_next_clip(self):
+        link = {"mode": "bridge", "hold": 39, "arrive": "short", "end_hold": 22, "a": self.side, "b": dict(self.side, file="b.mp4", first=17)}
+        graph = render_graph(new_project("x"), "x", clip(link=link, seconds=6.375), "t1", "draft", 3)
+        take = graph["10"]["inputs"]
+        self.assertEqual((take["video_mode"], take["end_hold_frames"], take["hold_frames"]), ("bridge", 22, 39))
+        # 22 frames of the next clip from where it is cut, picture, sound and latents, and no guide frame.
+        self.assertEqual(graph["7"]["inputs"], {"file": "p/clips/b.mp4", "first": 17, "last": 39})
+        self.assertEqual((take["end_video"], take["end_audio"], take["end_hold"]), (["7", 0], ["7", 1], ["7", 2]))
+        self.assertEqual(take["mid_frames"], "")
+        self.assertNotIn("mid_images.mid_image_0", take)
+        # The take starts its short hold on the latent's grid.
+        self.assertEqual(((take["length"] - 39) % 51, (take["length"] - 22) % 17), (0, 0))
+        self.assertEqual(bridge_spans(73, 73, take["length"], end_hold_frames=22)[1]["insert"], take["length"] - 22)
+
+    def test_a_pinned_bridge_is_as_long_as_an_extension(self):
+        for seconds in (1, 2.5, 4.25, 9):
+            pinned = linked_length({"mode": "bridge", "hold": 39, "arrive": "pin"}, seconds)
+            self.assertEqual(pinned, linked_length({"mode": "extend_after", "hold": 39}, seconds))
+            self.assertTrue(legal_length(pinned))
+
     def test_a_bridge_reads_both_clips(self):
         link = {"mode": "bridge", "hold": 39, "a": self.side, "b": dict(self.side, file="b.mp4")}
         graph = render_graph(new_project("x"), "x", clip(link=link, seconds=3), "t1", "draft", 3)
@@ -1079,6 +1118,17 @@ class LinkTest(unittest.TestCase):
     def test_a_final_saves_the_latent_it_sampled_before_enlarging(self):
         graph = render_graph(new_project("x"), "x", clip(), "t1", "final", 3)
         self.assertEqual(graph["20"]["inputs"]["latent"], ["15", 0])
+
+    def test_a_refined_final_saves_the_refined_latent_too(self):
+        graph = render_graph(new_project("x"), "x", clip(), "t1", "final", 3)
+        self.assertEqual(graph["90"]["class_type"], "SamplerCustomAdvanced")
+        self.assertEqual(graph["20"]["inputs"]["final"], ["90", 0])
+
+    def test_the_refine_pass_of_a_linked_final_holds_its_source_too(self):
+        link = {"mode": "extend_after", "hold": 39, "a": self.side}
+        graph = render_graph(new_project("x"), "x", clip(link=link, seconds=2), "t1", "final", 3)
+        self.assertEqual(graph["80"]["inputs"]["source_hold"], ["6", 2])
+        self.assertEqual((graph["80"]["inputs"]["width"], graph["80"]["inputs"]["height"]), (1920, 1088))
 
     def test_linked_clips_hold_the_saved_latents_of_their_sources(self):
         link = {"mode": "extend_after", "hold": 39, "a": self.side}

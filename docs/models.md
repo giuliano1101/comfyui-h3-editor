@@ -77,9 +77,9 @@ the larger size: HyperFlow its last 3 of 6, the 20-step families their last 3 of
 at 1088x1920, a 16:9 one at 1920x1088 and a 1:1 one at 1440x1440. The sound is
 the first pass's, and held frames stay as they are.
 
-Finals also run the MMH3 Realism Slider LoRA at 1.2 (`start_sigma = 0.75`) on
+Finals also run the MMH3 Realism Slider LoRA at 1.2 (`start_sigma = 0.93`) on
 both passes, for natural, un-airbrushed skin without drifting early composition
-steps. Both extras are optional:
+steps: with HyperFlow's six steps it leaves the first two to the model alone. Both extras are optional:
 
 | File | Folder | Size | Where to get it | Without it |
 |---|---|---|---|---|
@@ -166,11 +166,12 @@ Slider's strength on finals, from 0 to 3; it starts at 1.2.
 Each LoRA has a button that says when it joins the render, **Starts at once** by
 default. It opens a bar that stands for the render, from its first step on the
 left to its last on the right, lit where the LoRA works. **At once** runs it on
-every step. **After framing** (0.75) leaves the first steps to the model alone,
+every step. **After framing** (0.93) leaves the first steps to the model alone,
 so the framing and pose stay as they would be without the LoRA. **Details
-only** (0.4) lets it join for the last steps. Drag the bar or type a start for
+only** (0.7) lets it join for the last steps. Drag the bar or type a start for
 anything between. The button then shows the start, for example **Starts at
-0.75**.
+0.93**. The numbers sit close to 1 because H3 spends most of a render there:
+0.93 is about halfway through, and 0.75 already four fifths.
 
 A clip can have LoRAs of its own: in its Shot tab, open **Model and LoRAs** and
 press **Edit** beside LoRAs. Only that clip samples with them, after the project's. Adding one the
