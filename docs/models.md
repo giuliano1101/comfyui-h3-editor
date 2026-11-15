@@ -206,6 +206,10 @@ project takes up to 8. A patch whose pack is not installed shows **Not
 installed** and is left out of renders, so a project still opens and renders
 on a machine without that pack. A take records the patches it was made with.
 
+A project opened from a zip comes with its patches unticked, whoever made it.
+A patch runs a node of one of your packs with the settings the project gives
+it, so look at what each one is before you tick it.
+
 The editor does not know what a patch does, and no pack is needed for the
 editor itself. It cannot tell you whether a patch helps or harms: some speed a
 render up at a cost to the picture, some only save memory, and some do not

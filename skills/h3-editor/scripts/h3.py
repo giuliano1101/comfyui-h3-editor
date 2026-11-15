@@ -477,6 +477,8 @@ def main():
         print(made["folder"])
         if made.get("missing_loras"):
             print("Not on this machine: " + ", ".join(made["missing_loras"]))
+        if made.get("patches_off"):
+            print("Model patches switched off, for the user to switch on: " + ", ".join(made["patches_off"]))
         if made.get("outside"):
             print("Files it used from other projects, not in the zip: %d" % len(made["outside"]))
     elif c == "history":

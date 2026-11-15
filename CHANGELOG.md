@@ -19,6 +19,7 @@ Each release is a tag on GitHub, `v` followed by the version.
   project takes up to 8. They sit after the LoRAs, on drafts and on both
   passes of a final, and a take records the ones it was made with. A patch
   whose pack is not installed is kept in the project and left out of renders.
+  A project opened from a zip has its patches switched off until you tick them.
   Agents use `set_project` `patches`, and `GET /projects` lists the installed
   nodes with their inputs under `patches`. The editor names no other pack and
   needs none. It cannot know whether a patch helps or harms: render a clip

@@ -2382,12 +2382,37 @@ def clean_patches(value):
         if not isinstance(inputs, dict) or any(not isinstance(name, str) or not isinstance(v, (str, int, float, bool))
                                                for name, v in inputs.items()):
             raise ValueError("a patch's inputs is {name: value}, each value a number, true or false, or text")
+        if (len(row["node"]) > patching.NAME_MOST or len(inputs) > patching.INPUTS_MOST
+                or any(len(name) > patching.NAME_MOST or (isinstance(v, str) and len(v) > patching.TEXT_MOST) for name, v in inputs.items())):
+            raise ValueError("a patch takes up to %s inputs, names of up to %s characters and text of up to %s"
+                             % (patching.INPUTS_MOST, patching.NAME_MOST, patching.TEXT_MOST))
         made = {"id": str(row.get("id") or new_id("p")), "node": row["node"].strip(), "inputs": dict(inputs),
                 "on": row.get("on") is not False}
         if any(r["id"] == made["id"] for r in rows):
             raise ValueError("two patches share the id %s" % made["id"])
         rows.append(made)
     return rows
+
+
+def rest_patches(project):
+    """Switch off the model patches of a project that came from somewhere else. Returns the nodes switched off.
+
+    A patch runs a node of another pack with the values the project gives it, and whoever made
+    the project chose both, not the person opening it. They stay in the project, and render
+    once they are ticked here. A list that is not one a project can hold is dropped.
+    """
+    if not project.get("patches"):
+        return []
+    try:
+        rows = clean_patches(project["patches"])
+    except ValueError:
+        del project["patches"]
+        return []
+    rested = [row["node"] for row in rows if row["on"]]
+    for row in rows:
+        row["on"] = False
+    project["patches"] = rows
+    return rested
 
 
 def clean_checkpoints(value, limit=CHECKPOINT_LIMIT):

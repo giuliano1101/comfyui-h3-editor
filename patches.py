@@ -9,6 +9,10 @@ import math
 import re
 
 LIMIT = 8
+# The most a project may say about one patch: how many inputs, and how long a name or a text value is.
+INPUTS_MOST = 64
+NAME_MOST = 200
+TEXT_MOST = 4000
 PLAIN = {"INT": "int", "FLOAT": "float", "BOOLEAN": "bool", "STRING": "text"}
 # The patches most likely meant for this model list first.
 FIRST = re.compile(r"(?<![a-z0-9])h3|minimax|attention|attn", re.IGNORECASE)
@@ -160,6 +164,8 @@ def values(row, known):
         elif c["kind"] == "text":
             if not isinstance(value, str):
                 raise ValueError("%s must be text, not %r" % (what, value))
+            if len(value) > TEXT_MOST:
+                raise ValueError("%s takes up to %s characters" % (what, TEXT_MOST))
         else:
             if not number(value) or (c["kind"] == "int" and isinstance(value, float) and not value.is_integer()):
                 raise ValueError("%s must be a %s, not %r" % (what, "whole number" if c["kind"] == "int" else "number", value))

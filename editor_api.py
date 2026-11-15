@@ -749,12 +749,14 @@ async def open_project(request):
         opened["name"] = title
         opened["pending"] = []
         opened.pop("revision", None)
+        # A zip can come from anyone. Its model patches wait, switched off, for whoever opened it to tick them.
+        rested = store.rest_patches(opened)
         async with lock(made):
             commit(made, opened, "open", request.query.get("client"))
         have = {name.lower() for name in lora_files()}
         missing = [name for name in manifest.get("models", {}).get("loras", []) if name.lower() not in have]
         return web.json_response({"folder": made, "name": title, "release": manifest.get("release"), "keep": manifest.get("keep"),
-                                  "missing_loras": missing, "outside": manifest.get("outside", []), "files": manifest.get("files", 0)})
+                                  "missing_loras": missing, "patches_off": rested, "outside": manifest.get("outside", []), "files": manifest.get("files", 0)})
     finally:
         try:
             os.remove(upload)

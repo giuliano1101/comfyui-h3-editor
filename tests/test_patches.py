@@ -4,7 +4,7 @@ import unittest
 import patches
 import project as project_module
 from project import (MODELS, PROFILES, apply_op, clean_patches, describe, new_project, plan_render, project_patches,
-                     render_graph, render_models, set_project)
+                     render_graph, render_models, rest_patches, set_project)
 
 HYPERFLOW = set(PROFILES["hyperflow"]["unet"] + PROFILES["hyperflow"]["unet_text"])
 FINALS = {MODELS["latent_upscaler"], MODELS["lora"]}
@@ -172,6 +172,35 @@ class CleanTest(unittest.TestCase):
         set_project(project, {"patches": [dict(first, inputs={"chunks": 2}), {"node": "SparseAttention"}]})
         self.assertEqual(project["patches"][0]["id"], first["id"])
         self.assertEqual(clean_patches([]), [])
+
+    def test_a_patch_can_only_say_so_much(self):
+        for bad in ([{"node": "N" * 201}], [{"node": "A", "inputs": {"x" * 201: 1}}], [{"node": "A", "inputs": {"x": "y" * 4001}}],
+                    [{"node": "A", "inputs": {"i%s" % n: n for n in range(65)}}]):
+            with self.assertRaises(ValueError):
+                clean_patches(bad)
+        self.assertEqual(clean_patches([{"node": "A", "inputs": {"x": "y" * 4000}}])[0]["inputs"]["x"], "y" * 4000)
+        # A project file written by hand is held to the same length when it renders.
+        with self.assertRaises(ValueError) as caught:
+            patches.values({"inputs": {"blocks": "1," * 2001}}, INSTALLED["SparseAttention"])
+        self.assertIn("blocks takes up to 4000 characters", str(caught.exception))
+
+    def test_a_project_from_somewhere_else_has_its_patches_switched_off(self):
+        project = new_project("x")
+        self.assertEqual(rest_patches(project), [])
+        self.assertNotIn("patches", project)
+        set_project(project, {"patches": [{"node": "StepCache", "inputs": {"threshold": 0.4}}, {"node": "CompileModel", "on": False},
+                                          {"node": "SparseAttention"}]})
+        ids = [row["id"] for row in project["patches"]]
+        self.assertEqual(rest_patches(project), ["StepCache", "SparseAttention"])
+        self.assertEqual([(row["id"], row["on"]) for row in project["patches"]], [(i, False) for i in ids])
+        self.assertEqual(project["patches"][0]["inputs"], {"threshold": 0.4})
+        graph = render_graph(project, "x", clip(), "t1", "draft", 3, None, INSTALLED)
+        self.assertNotIn("120", graph)
+        # A list no project could hold is dropped, not switched off.
+        for junk in ("StepCache", [{"node": "A", "inputs": {"x": "y" * 5000}}], [{"node": "N%s" % n} for n in range(9)], [3]):
+            project["patches"] = junk
+            self.assertEqual(rest_patches(project), [])
+            self.assertNotIn("patches", project)
 
     def test_an_agent_sets_them_in_a_batch_and_reads_them_in_the_summary(self):
         project = new_project("x")

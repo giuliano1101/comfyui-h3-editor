@@ -7717,6 +7717,7 @@ $("projectOpen").addEventListener("click", async () => {
     await openProject(reply.folder);
     const notes = [];
     if (reply.missing_loras?.length) notes.push("Not on this machine: " + reply.missing_loras.join(", ") + ".");
+    if (reply.patches_off?.length) notes.push("Its model patches are switched off: tick the ones you trust in the Project tab to render with them.");
     if (reply.keep === "text") notes.push("It holds no renders: render its clips to see them.");
     toast("Opened " + reply.name + "." + (notes.length ? " " + notes.join(" ") : ""));
   };

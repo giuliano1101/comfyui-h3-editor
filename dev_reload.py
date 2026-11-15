@@ -25,6 +25,8 @@ def install(package):
             return web.json_response({"reloaded": False, "reason": "a prompt is running"}, status=409)
         core = sys.modules["nodes"]
         try:
+            # This module first: the list below is then the one on disk, with any module added since ComfyUI started.
+            importlib.reload(sys.modules[__name__])
             # A module new since ComfyUI started is imported for the first time.
             loaded = [importlib.reload(sys.modules[full]) if full in sys.modules else importlib.import_module(full)
                       for full in ("%s.%s" % (package, name) for name in MODULES)]
