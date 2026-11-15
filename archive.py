@@ -11,7 +11,8 @@ project's folder. Three levels:
         is left out, so the clips open unrendered, with their text, seeds and settings, ready to render again.
 
 Opening a zip makes a new project, under the name it had if that is free. Every member is checked first: nothing is
-written outside the new project's folder, links are refused, and the size must fit on the disk.
+written outside the new project's folder, links are refused, and the size must fit on the disk. What a zip never
+carries (a revision history, previews, a project file under files/, hidden files) is not opened from one either.
 """
 import json
 import os
@@ -164,6 +165,18 @@ def _member_path(name):
     return clean[len("files/"):]
 
 
+def _own(path):
+    """Whether a path inside a project folder is one a zip never carries, so it is not opened from one.
+
+    The revisions and previews belong to the machine that made them, the project file is written by the
+    server, and hidden files are never packed. A zip that holds one was made by hand: its revisions would
+    sit in the new project's history as if they were its own, ready to be restored. Names are compared as
+    Windows reads them, without case and without dots or spaces at the end.
+    """
+    parts = [part.rstrip(". ").lower() for part in path.split("/")]
+    return parts[0] in SKIP_DIRS or parts == ["project.json"] or any(part.startswith(".") or not part for part in parts)
+
+
 def read(source):
     """The manifest and project of a zip, after checking every member. Raises ArchiveError."""
     try:
@@ -194,8 +207,8 @@ def read(source):
                 raise ArchiveError("the zip holds a file outside files/: %s" % info.filename[:120])
             if (info.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ArchiveError("the zip holds a link, which is not opened: %s" % info.filename[:120])
-            _member_path(info.filename)
-            total += info.file_size
+            if not _own(_member_path(info.filename)):
+                total += info.file_size
         manifest["unpacked_bytes"] = total
     return manifest, data
 
@@ -212,6 +225,8 @@ def unpack(source, target_dir):
         with zipfile.ZipFile(source) as zipped:
             for info in zipped.infolist():
                 if info.filename in ("manifest.json", "project.json") or info.is_dir():
+                    continue
+                if _own(_member_path(info.filename)):
                     continue
                 path = os.path.realpath(os.path.join(base, _member_path(info.filename)))
                 if not path.startswith(base + os.sep):

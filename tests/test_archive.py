@@ -162,6 +162,18 @@ class ArchiveTest(unittest.TestCase):
             archive.unpack(target, opened)
         self.assertFalse(os.path.exists(opened))
 
+    def test_a_zip_cannot_bring_a_history_previews_or_a_project_file(self):
+        planted = ["files/history/000050.json", "files/History/000051.json", "files/history./000052.json", "files/preview/live.jpg",
+                   "files/project.json", "files/.hidden/x.txt", "files/clips/.secret", "files/clips/... /x.txt"]
+        target = self.zip_with([(name, "planted") for name in planted] + [("files/clips/ok.mp4", "video"), ("files/assets/history/pic.png", "p")])
+        self.assertEqual(archive.read(target)[0]["unpacked_bytes"], len("video") + len("p"))
+        opened = os.path.join(self.tmp, "Planted")
+        archive.unpack(target, opened)
+        found = sorted(os.path.relpath(os.path.join(here, name), opened).replace("\\", "/")
+                       for here, _, names in os.walk(opened) for name in names)
+        # Only a folder named history at the top is this machine's own.
+        self.assertEqual(found, ["assets/history/pic.png", "clips/ok.mp4"])
+
     def test_a_taken_name_gets_a_number(self):
         slug = project_module.slug
         self.assertEqual(archive.free_name("Demo", ["Other"], slug), "Demo")
