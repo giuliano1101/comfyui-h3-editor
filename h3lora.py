@@ -69,7 +69,9 @@ def read_lora(path):
             if key.startswith(prefix):
                 key = key[len(prefix):]
                 break
-        lora[key] = value
+        # Windows cannot unlink/replace a safetensors file while a mapped tensor
+        # remains alive. LoRA patches must own their storage after this loader.
+        lora[key] = value.clone() if os.name == "nt" else value
     return lora
 
 

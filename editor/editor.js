@@ -16,6 +16,11 @@ const STAGES = { 10: "Reading the prompt", 15: "Sampling", 16: "Decoding the pic
 
 import { VfxRuntime } from "./vfx-runtime.js";
 import * as writer from "./writer.js";
+import { installProviderPanel } from "./providers.js";
+
+const editorSession = fetch("/h3take/api/session", { headers: { "X-H3-Editor": "1" } }).then((response) => {
+  if (!response.ok) throw new Error("Cannot open a local editor session. Use localhost and refresh the page.");
+});
 
 const state = {
   folder: null,
@@ -138,7 +143,10 @@ function toast(message, bad = false, action = null) {
 const undoAction = { label: "Undo", run: () => restore(undo, redo) };
 
 async function api(path, options) {
-  const response = await fetch("/h3take/api" + path, options);
+  await editorSession;
+  const headers = new Headers(options?.headers);
+  headers.set("X-H3-Editor", "1");
+  const response = await fetch("/h3take/api" + path, { ...options, headers });
   if (!response.ok) {
     const text = await response.text();
     let message = text;
@@ -5579,7 +5587,7 @@ async function renderEffectTake(id, claimed = null) {
     let batch = [];
     const send = async () => {
       if (!batch.length) return;
-      const response = await fetch("/h3take/api" + path + "/frames?job=" + job, { method: "POST", body: new Blob(batch) });
+      const response = await fetch("/h3take/api" + path + "/frames?job=" + job, { method: "POST", headers: { "X-H3-Editor": "1" }, body: new Blob(batch) });
       if (!response.ok) throw new Error((await response.text()) || "The server refused the frames.");
       batch = [];
     };
@@ -8575,5 +8583,10 @@ function bindNoteLayer() {
   for (const video of [$("videoA"), $("videoB")]) video.addEventListener("seeked", () => drawNotes());
 }
 bindNoteLayer();
+
+installProviderPanel({ state, api, postJson, toast, adopt, async flush() {
+  await flush();
+  if (unsaved()) throw new Error("Save the current edits before preparing a provider job.");
+} });
 
 start().catch((error) => toast(error.message, true));

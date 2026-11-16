@@ -129,7 +129,13 @@ async def run_bytes(args):
     except RuntimeError as error:
         raise web.HTTPInternalServerError(text=str(error))
     process = await asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = await process.communicate()
+    try:
+        out, err = await process.communicate()
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        raise
     if process.returncode != 0:
         raise web.HTTPInternalServerError(text=err.decode(errors="replace")[-600:])
     return out
@@ -2048,6 +2054,12 @@ async def export(request):
     except ValueError:
         body = {}
     body = body if isinstance(body, dict) else {}
+    return await export_snapshot(name, data, body)
+
+
+async def export_snapshot(name, data, body=None):
+    """Export one revision's snapshot, also used by the approved MCP bridge."""
+    body = body or {}
     scale = body.get("scale", 1.0)
     quality = body.get("quality") or "high"
     if scale not in store.EXPORT_SCALES or quality not in store.EXPORT_QUALITY:
@@ -2153,13 +2165,25 @@ def install():
     routes = PromptServer.instance.routes
     module = sys.modules[__name__].__name__
 
+    from . import provider_api
+    # Private state must stay outside output and its /view download route.
+    private = os.path.join(folder_paths.get_user_directory(), "h3-provider")
+    runtime = provider_api.Runtime(sys.modules[module], private)
+    PromptServer.instance.h3_provider_runtime = runtime
+
     def bound(handler):
         async def call(request):
-            return await getattr(sys.modules[module], handler)(request)
+            if handler == "page":
+                runtime.access.local(request, navigation=True)
+                response = await getattr(sys.modules[module], handler)(request)
+                response.headers["Referrer-Policy"] = "same-origin"
+                response.headers["X-Frame-Options"] = "SAMEORIGIN"
+                return response
+            return await runtime.dispatch(request, handler)
 
         return call
 
-    for method, path, handler in ROUTES:
+    for method, path, handler in ROUTES + provider_api.ROUTES:
         routes.route(method, path)(bound(handler))
     routes.static("/h3take/editor-files/", PAGE)
     PromptServer.instance.loop.call_soon_threadsafe(lambda: getattr(sys.modules[module], "ensure_watcher")())

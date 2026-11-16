@@ -14,6 +14,7 @@ not at http://127.0.0.1:8188. Run any command with -h for its options.
 """
 
 import argparse
+import http.cookiejar
 import json
 import mimetypes
 import os
@@ -27,10 +28,39 @@ import urllib.request
 import uuid
 
 URL = os.environ.get("H3_EDITOR_URL", "http://127.0.0.1:8188").rstrip("/")
+_SESSION_URL = None
+_OPENER = None
 
 
 class Refused(Exception):
     pass
+
+
+def local_opener():
+    """The trusted local CLI uses the same transient session as the local editor.
+
+    MCP clients must use tools/h3_mcp.py instead; their token has project scopes.
+    Cookies remain in process memory and are never printed or written to disk.
+    """
+    global _SESSION_URL, _OPENER
+    if _SESSION_URL == URL:
+        return _OPENER
+    parsed = urllib.parse.urlsplit(URL)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in ("127.0.0.1", "localhost", "::1") or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+        raise Refused("This fork's editor CLI requires a literal local editor URL")
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), NoRedirect())
+    opener.addheaders = [("X-H3-Editor", "1")]
+    try:
+        with opener.open(urllib.request.Request(URL + "/h3take/api/session", headers={"X-H3-Editor": "1"}), timeout=10):
+            pass
+    except (urllib.error.URLError, OSError):
+        raise Refused("Cannot establish a local editor session. Check the editor URL and server.") from None
+    _SESSION_URL, _OPENER = URL, opener
+    return opener
 
 
 def request(method, path, body=None, timeout=120, raw=False, headers=None):
@@ -43,7 +73,7 @@ def request(method, path, body=None, timeout=120, raw=False, headers=None):
         data = body
     req = urllib.request.Request(URL + path, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        with local_opener().open(req, timeout=timeout) as response:
             payload = response.read()
     except urllib.error.HTTPError as error:
         text = error.read().decode("utf-8", errors="replace")
@@ -464,7 +494,7 @@ def main():
             # Streamed to the file as it comes: a project can be gigabytes.
             req = urllib.request.Request(URL + "/h3take/api" + project_path(args.project) + "/archive?keep=" + args.keep)
             try:
-                with urllib.request.urlopen(req, timeout=3600) as response, open(target, "wb") as f:
+                with local_opener().open(req, timeout=3600) as response, open(target, "wb") as f:
                     shutil.copyfileobj(response, f, 1 << 20)
             except urllib.error.HTTPError as error:
                 raise SystemExit("Refused: %s" % error.read().decode("utf-8", errors="replace")[:400])

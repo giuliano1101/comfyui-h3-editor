@@ -1,5 +1,13 @@
 # H3 Editor
 
+> **Windows provider fork (experimental):** based on upstream commit `0d2e0d1`.
+> Adds offline simulated jobs, disabled-by-default MiniMax v1 Hailuo adapters,
+> staged new-take import and a scoped local MCP bridge in the existing editor.
+> No live paid API or GPU H3 generation has been verified in this fork.
+> Start with [Windows checks](docs/WINDOWS.md), [provider setup](PROVIDERS.md),
+> [security boundaries](docs/SECURITY-PROVIDERS.md) and [delivery status](docs/DELIVERY.md).
+> The discovered local ComfyUI 0.37.0 was left unchanged; upstream requires 0.43+.
+
 A timeline video editor for MiniMax H3, inside ComfyUI. Write your shots,
 render them on your own GPU, and cut them together, picture and sound.
 

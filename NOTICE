@@ -1,5 +1,14 @@
 H3 Editor
 
+Windows provider fork modifications, 2026-11-17
+  Repository: https://github.com/giuliano1101/comfyui-h3-editor
+  Base: igorls/comfyui-h3-editor commit 0d2e0d1fad9218cafdb599902be252f3254b2fa1.
+  Added durable provider jobs, protocol-specific adapters, controlled media staging,
+  local browser sessions, scoped/approved MCP tools, provider UI and local voice-note
+  controls, tests and Windows documentation. Fixed Windows LoRA storage ownership.
+  New fork code is GPL-3.0 under LICENSE. No MakeMyClip source or model weights are
+  included. Upstream and third-party notices below remain applicable.
+
 H3 Editor is licensed under the GNU General Public License v3.0, in LICENSE.
 This pack includes work from other projects, each under its own license.
 
