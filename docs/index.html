@@ -13,6 +13,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="images/icon.png">
 <link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+<script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="site.css">
 <script src="site.js" defer></script>
 </head>
@@ -52,12 +53,10 @@
 </header>
 
 <main id="main">
-  <section class="hero" aria-labelledby="hero-title">
-    <div class="hero-frame">
-      <video id="reel" class="hero-video" src="media/pass.mp4" poster="media/pass.jpg" muted loop playsinline autoplay preload="auto" aria-label="The pass: a kitchen scene of four shots made with H3 Editor"></video>
-      <div class="hero-shade" aria-hidden="true"></div>
-      <div class="hero-copy">
-        <h1 id="hero-title">A video editor for MiniMax&nbsp;H3, inside ComfyUI.</h1>
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <h1 id="hero-title">A video editor for MiniMax&nbsp;H3, inside ComfyUI.</h1>
+      <div class="hero-side">
         <p class="lede">Write shots in plain words, render them with their sound on your own GPU, and cut them together. By hand, or let an agent drive the same timeline.</p>
         <div class="cmd">
           <code>comfy node install h3-editor</code>
@@ -65,13 +64,28 @@
         </div>
         <p class="hero-alt">Or search <strong>H3 Editor</strong> in ComfyUI-Manager. The registry listing is new, so while its first versions are in review, <a href="#install">clone it from GitHub</a>. Free software under the GPL-3.0.</p>
       </div>
-      <div class="hero-foot">
-        <p class="hero-credit">The pass: four shots and their sound, 15 seconds, rendered with HyperFlow H3 Flash and exported from the editor.</p>
-        <button class="round" id="reel-sound" type="button" aria-pressed="false" aria-label="Sound">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
-        </button>
-      </div>
     </div>
+    <figure class="morph" id="morph">
+      <div class="morph-box" id="morph-box">
+      <div class="morph-stage" id="morph-stage" aria-hidden="true">
+        <div class="morph-grid"></div>
+        <img class="morph-end" src="images/editor.jpg" width="2880" height="1760" alt="">
+        <video id="reel" class="morph-video" src="media/pass.mp4" poster="media/pass.jpg" muted loop playsinline preload="metadata"></video>
+        <svg class="morph-wires" id="morph-wires" viewBox="0 0 1440 880" preserveAspectRatio="none"></svg>
+        <div class="morph-nodes" id="morph-nodes"></div>
+      </div>
+      </div>
+      <p class="sr">A tangled ComfyUI node graph for one H3 shot folds into H3 Editor 0.9.1, which then plays the kitchen scene The pass in its viewer.</p>
+      <figcaption class="morph-foot">
+        <span>The graph for one H3 shot, and the editor that builds it for you. Playing: The pass, four shots and their sound, rendered with HyperFlow H3 Flash.</span>
+        <span class="morph-tools">
+          <button class="btn quiet" id="morph-replay" type="button">Replay</button>
+          <button class="round" id="reel-sound" type="button" aria-pressed="false" aria-label="Sound of the kitchen scene">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+          </button>
+        </span>
+      </figcaption>
+    </figure>
   </section>
 
   <section class="section wrap" id="showcase" aria-labelledby="showcase-title">
@@ -177,15 +191,9 @@
 
   <section class="section wrap" id="features" aria-labelledby="features-title">
     <div class="head">
-      <h2 id="features-title">Everything a cut needs, on one screen.</h2>
+      <h2 id="features-title">Everything a cut needs, in one window.</h2>
       <p>Clips and cast on the left, the viewer in the middle, the selected clip in tabs on the right, the timeline below. It opens from ComfyUI's sidebar and needs no other custom node pack.</p>
     </div>
-    <figure class="shot-full">
-      <picture>
-        <source media="(max-width: 640px)" srcset="images/editor-mobile.jpg" width="764" height="1065">
-        <img src="images/editor.jpg" width="2880" height="1760" loading="lazy" alt="H3 Editor 0.9.1 with the kitchen scene open: clips and cast on the left, the viewer, the Face clip's shot text, camera and render buttons on the right, and four clips with their sound on the timeline, the Face clip selected.">
-      </picture>
-    </figure>
 
     <div class="bento">
       <article class="tile wide">

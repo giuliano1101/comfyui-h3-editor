@@ -9,18 +9,222 @@ function whileVisible(video, allowed) {
   }, { threshold: 0.35 }).observe(video);
 }
 
-// The hero reel: muted until the visitor asks for sound, and still under reduced motion.
+// The hero: a tangled ComfyUI graph for one H3 shot folds into the editor, which then plays the cut.
+// Everything is laid out in the editor capture's own 1440 x 880 space and scaled to the frame.
 (() => {
+  const W = 1440, H = 880;
+  const box = document.getElementById("morph-box");
+  const stage = document.getElementById("morph-stage");
+  const layer = document.getElementById("morph-nodes");
+  const svg = document.getElementById("morph-wires");
+  const grid = stage.querySelector(".morph-grid");
+  const end = stage.querySelector(".morph-end");
   const reel = document.getElementById("reel");
-  const button = document.getElementById("reel-sound");
+  const sound = document.getElementById("reel-sound");
+  const replay = document.getElementById("morph-replay");
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduceMotion) { reel.removeAttribute("autoplay"); reel.pause(); }
-  button.addEventListener("click", () => {
-    reel.muted = !reel.muted;
-    button.setAttribute("aria-pressed", String(!reel.muted));
-    if (!reel.muted && reel.paused) reel.play().catch(() => {});
+
+  // ComfyUI's colours for the types a wire carries.
+  const TYPE = { MODEL: "#b39ddb", CLIP: "#ffd500", CONDITIONING: "#ffa931", LATENT: "#ff9cf9", VAE: "#ff6e6e", IMAGE: "#64b5f6", MASK: "#81c784", AUDIO: "#64b5f6", VIDEO: "#64b5f6", NOISE: "#b0b0b0", GUIDER: "#66ffff", SAMPLER: "#ecb4b4", SIGMAS: "#cdffcd" };
+  // Real ComfyUI core nodes, with H3's own files in their fields.
+  const SPECS = [
+    ["Load Diffusion Model", [], ["MODEL"], [["unet_name", "minimax_h3_fl2va_hyperflow_flash_14b-int8_convrot"], ["weight_dtype", "default"]]],
+    ["Load CLIP", [], ["CLIP"], [["clip_name", "qwen3vl_32b_minimax_h3_nvfp4_awq"]]],
+    ["CLIP Text Encode (Prompt)", ["clip"], ["CONDITIONING"], [["text", "@Chef studies the plate. Then her eyes lift"]]],
+    ["CLIP Text Encode (Prompt)", ["clip"], ["CONDITIONING"], [["text", "blurry, low quality, text"]]],
+    ["Load VAE", [], ["VAE"], [["vae_name", "minimax_h3_video_vae_fp16"]]],
+    ["Load VAE", [], ["VAE"], [["vae_name", "minimax_h3_audio_vae_fp32"]]],
+    ["LoraLoaderModelOnly", ["model"], ["MODEL"], [["lora_name", "MMH3-Realism-V2"], ["strength_model", "1.20"]]],
+    ["ModelSamplingSD3", ["model"], ["MODEL"], [["shift", "12.00"]]],
+    ["Load Image", [], ["IMAGE", "MASK"], [["image", "chef.png"]]],
+    ["VAE Encode", ["pixels", "vae"], ["LATENT"], []],
+    ["Empty Latent Image", [], ["LATENT"], [["width", "1344"], ["height", "768"], ["length", "93"]]],
+    ["RandomNoise", [], ["NOISE"], [["noise_seed", "1541804686"]]],
+    ["CFGGuider", ["model", "positive", "negative"], ["GUIDER"], [["cfg", "1.0"]]],
+    ["KSamplerSelect", [], ["SAMPLER"], [["sampler_name", "euler"]]],
+    ["BasicScheduler", ["model"], ["SIGMAS"], [["scheduler", "simple"], ["steps", "6"]]],
+    ["SamplerCustomAdvanced", ["noise", "guider", "sampler", "sigmas", "latent_image"], ["LATENT", "LATENT"], []],
+    ["Upscale Latent", ["samples"], ["LATENT"], [["upscale_method", "bislerp"], ["width", "1920"], ["height", "1088"]]],
+    ["SamplerCustomAdvanced", ["noise", "guider", "sampler", "sigmas", "latent_image"], ["LATENT", "LATENT"], []],
+    ["VAE Decode", ["samples", "vae"], ["IMAGE"], []],
+    ["VAE Decode Audio", ["samples", "vae"], ["AUDIO"], []],
+    ["Create Video", ["images", "audio"], ["VIDEO"], [["fps", "24"]]],
+    ["Save Video", ["video"], [], [["filename_prefix", "video/shot"], ["codec", "h264"]]],
+    ["Preview Image", ["images"], [], []],
+    ["ConditioningZeroOut", ["conditioning"], ["CONDITIONING"], []],
+    ["LoraLoaderModelOnly", ["model"], ["MODEL"], [["lora_name", "h3_turbo_lora"], ["strength_model", "1.00"]]],
+    ["Load Image", [], ["IMAGE", "MASK"], [["image", "last_frame.png"]]],
+  ];
+  // Where each node lands: a region of the editor, measured on the capture behind it.
+  const TARGETS = [
+    [12, 8, 220, 31, "#2a2d33"], [280, 8, 94, 31, "#2d3239"], [1000, 8, 142, 31, "#2d3239"], [1160, 8, 117, 31, "#2d3239"], [1285, 8, 63, 31, "#e0a24a"],
+    [12, 102, 239, 66, "#2d3239"], [12, 172, 239, 66, "#2d3239"], [12, 242, 239, 66, "#3a3022"], [12, 312, 239, 66, "#2d3239"],
+    [12, 469, 74, 94, "#2d3239"], [285, 81, 754, 427, "#000000"], [400, 535, 520, 32, "#22262c"],
+    [1061, 48, 379, 39, "#22262c"], [1071, 99, 317, 30, "#1b1e23"], [1077, 226, 347, 132, "#1b1e23"], [1077, 397, 243, 31, "#1b1e23"],
+    [1332, 397, 92, 31, "#1b1e23"], [1077, 469, 79, 36, "#2d3239"], [1077, 492, 168, 32, "#2d3239"], [1256, 492, 168, 32, "#e0a24a"],
+    [12, 586, 700, 30, "#22262c"], [104, 692, 263, 114, "#2d3239"], [367, 692, 263, 114, "#2d3239"], [630, 692, 324, 114, "#3a3022"],
+    [954, 692, 446, 114, "#2d3239"], [104, 820, 1296, 52, "#1f3a37"],
+  ];
+
+  // A seeded shuffle of positions, so the mess is the same mess on every visit.
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+
+  const nodes = SPECS.map(([title, ins, outs, fields], i) => {
+    const rows = Math.max(ins.length, outs.length, 1);
+    const w = 190 + Math.round(rnd() * 70);
+    const h = 26 + rows * 20 + fields.length * 22 + 10;
+    const el = document.createElement("div");
+    el.className = "gnode";
+    const inner = document.createElement("div");
+    inner.className = "gnode-in";
+    const head = document.createElement("div");
+    head.className = "gnode-head";
+    head.textContent = title;
+    inner.append(head);
+    for (let r = 0; r < rows; r++) {
+      const row = document.createElement("div");
+      row.className = "gnode-row";
+      const a = document.createElement("span"), b = document.createElement("span");
+      a.textContent = ins[r] || "";
+      b.textContent = (outs[r] || "");
+      if (ins[r]) { const dot = document.createElement("i"); dot.className = "l"; dot.style.background = "#9a9a9a"; row.append(dot); }
+      if (outs[r]) { const dot = document.createElement("i"); dot.className = "r"; dot.style.background = TYPE[outs[r]] || "#9a9a9a"; row.append(dot); }
+      row.append(a, b);
+      inner.append(row);
+    }
+    for (const [k, v] of fields) {
+      const f = document.createElement("div");
+      f.className = "gnode-field";
+      const key = document.createElement("span"), val = document.createElement("b");
+      key.textContent = k; val.textContent = v;
+      f.append(key, val);
+      inner.append(f);
+    }
+    el.append(inner);
+    layer.append(el);
+    // Scattered over the whole frame, piled on each other, a little askew.
+    const x = 30 + rnd() * (W - w - 60), y = 20 + rnd() * (H - h - 40);
+    return { el, inner, ins, outs, x, y, w, h, tilt: (rnd() - 0.5) * 5, z: Math.floor(rnd() * 30) };
   });
-  whileVisible(reel, () => !reduceMotion || !reel.muted);
+
+  // Each target goes to the node that starts nearest it, so the fold reads as order coming out of the mess.
+  const free = TARGETS.map((t, i) => i);
+  const centre = (x, y, w, h) => [x + w / 2, y + h / 2];
+  const order = nodes.map((n, i) => i).sort((a, b) => nodes[b].w * nodes[b].h - nodes[a].w * nodes[a].h);
+  const bigFirst = TARGETS.map((t, i) => i).sort((a, b) => TARGETS[b][2] * TARGETS[b][3] - TARGETS[a][2] * TARGETS[a][3]);
+  order.forEach((ni, k) => {
+    const n = nodes[ni];
+    const [cx, cy] = centre(n.x, n.y, n.w, n.h);
+    const pool = k < 4 ? bigFirst.filter((t) => free.includes(t)).slice(0, 6) : free;
+    let best = pool[0], bestD = Infinity;
+    for (const t of pool) {
+      const [tx, ty] = centre(...TARGETS[t].slice(0, 4));
+      const d = Math.hypot(tx - cx, ty - cy);
+      if (d < bestD) { bestD = d; best = t; }
+    }
+    free.splice(free.indexOf(best), 1);
+    n.t = TARGETS[best];
+    n.delay = 0.006 * k + rnd() * 0.06;   // at most about a fifth of the move apart, so every node lands
+  });
+
+  // Wires: from each output to an input of some other node, in the output's colour.
+  const wires = [];
+  nodes.forEach((n, i) => {
+    n.outs.forEach((type, r) => {
+      const targets = nodes.filter((m) => m !== n && m.ins.length);
+      const links = 1 + Math.floor(rnd() * 2);
+      for (let k = 0; k < links; k++) {
+        const m = targets[Math.floor(rnd() * targets.length)];
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("stroke", TYPE[type] || "#9a9a9a");
+        svg.append(path);
+        wires.push({ a: n, ar: r, b: m, br: Math.floor(rnd() * m.ins.length), path });
+      }
+    });
+  });
+
+  const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const span = (t, a, b) => clamp01((t - a) / (b - a));
+  const mix = (a, b, k) => a + (b - a) * k;
+
+  // One frame of the fold, from t = 0 (the graph) to t = 1 (the editor).
+  function draw(t) {
+    const hold = span(t, 0, 0.3);                  // the graph drifts a little while it is read
+    const pull = span(t, 0.28, 0.46);              // the wires go as the nodes start to move
+    const zoom = mix(1.05, 1, ease(hold));
+    layer.style.transform = svg.style.transform = "scale(" + zoom + ")";
+    layer.style.transformOrigin = svg.style.transformOrigin = "50% 50%";
+    for (const n of nodes) {
+      const k = ease(span(t, 0.3 + n.delay, 0.6 + n.delay));
+      const [tx, ty, tw, th, colour] = n.t;
+      n.cx = mix(n.x, tx, k); n.cy = mix(n.y, ty, k); n.cw = mix(n.w, tw, k); n.ch = mix(n.h, th, k);
+      const s = n.el.style;
+      s.left = n.cx + "px"; s.top = n.cy + "px"; s.width = n.cw + "px"; s.height = n.ch + "px";
+      s.transform = "rotate(" + n.tilt * (1 - k) + "deg)";
+      s.zIndex = k > 0.02 ? 100 + n.z : n.z;
+      s.background = k > 0.8 ? colour : "";
+      s.borderRadius = mix(8, 6, k) + "px";
+      s.opacity = 1 - span(t, 0.8, 0.94);
+      n.inner.style.opacity = 1 - span(k, 0.1, 0.55);
+    }
+    for (const w of wires) {
+      const ax = w.a.cx + w.a.cw, ay = w.a.cy + 26 + 10 + w.ar * 20;
+      const bx = w.b.cx, by = w.b.cy + 26 + 10 + w.br * 20;
+      const dx = Math.max(60, Math.abs(bx - ax) * 0.5);
+      w.path.setAttribute("d", "M" + ax + " " + ay + " C" + (ax + dx) + " " + ay + " " + (bx - dx) + " " + by + " " + bx + " " + by);
+    }
+    svg.style.opacity = 1 - pull;
+    grid.style.opacity = 1 - span(t, 0.5, 0.78);
+    end.style.opacity = span(t, 0.72, 0.9);
+    reel.style.opacity = span(t, 0.82, 0.96);
+  }
+
+  const DURATION = 4200;
+  let started = 0, frame = 0;
+  function run(now) {
+    if (!started) started = now;
+    const t = Math.min(1, (now - started) / DURATION);
+    draw(t);
+    if (t < 1) frame = requestAnimationFrame(run);
+    else { started = 0; reel.play().catch(() => {}); }
+  }
+  function play() {
+    cancelAnimationFrame(frame);
+    started = 0;
+    reel.pause();
+    reel.currentTime = 0;
+    draw(0);
+    frame = requestAnimationFrame((now) => { started = now + 700; frame = requestAnimationFrame(run); });
+  }
+
+  function fit() { stage.style.transform = "scale(" + box.clientWidth / W + ")"; }
+  fit();
+  new ResizeObserver(fit).observe(box);
+
+  if (reduceMotion) { draw(1); }
+  else {
+    draw(0);
+    let seen = false;
+    new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting && !seen) { seen = true; play(); }
+    }, { threshold: 0.3 }).observe(box);
+  }
+  replay.addEventListener("click", () => { if (reduceMotion) { draw(1); return; } play(); });
+
+  sound.addEventListener("click", () => {
+    reel.muted = !reel.muted;
+    sound.setAttribute("aria-pressed", String(!reel.muted));
+    if (!reel.muted && reel.paused && reel.style.opacity === "1") reel.play().catch(() => {});
+  });
+  // Off screen the cut pauses; back on screen it carries on once the fold has finished.
+  new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) reel.pause();
+      else if (reel.style.opacity === "1" && (!reduceMotion || !reel.muted)) reel.play().catch(() => {});
+    }
+  }, { threshold: 0.35 }).observe(box);
 })();
 
 // The showcase: choosing a render swaps the clip and the words that made it, together.
