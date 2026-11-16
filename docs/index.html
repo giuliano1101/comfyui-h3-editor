@@ -4,14 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>H3 Editor: a video editor for MiniMax H3 in ComfyUI</title>
-<meta name="description" content="A timeline video editor for MiniMax H3 that runs inside ComfyUI. Write shots, render them on your own GPU, cut picture and sound together, or let an agent make the video.">
-<meta name="theme-color" content="#1b1e23">
+<meta name="description" content="A timeline video editor for MiniMax H3 that runs inside ComfyUI. Write shots, render them with their sound on your own GPU, cut them together, or let an agent make the video.">
+<meta name="theme-color" content="#09090b">
 <meta property="og:type" content="website">
 <meta property="og:title" content="H3 Editor">
 <meta property="og:description" content="A timeline video editor for MiniMax H3, inside ComfyUI. Cut it yourself, or hand the same timeline to an agent.">
-<meta property="og:image" content="https://igorls.github.io/comfyui-h3-editor/images/editor.jpg">
+<meta property="og:image" content="https://igorls.github.io/comfyui-h3-editor/images/banner.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231b1e23'/%3E%3Cpath d='M4 3h8v6l-4 3.2L4 9z' fill='%23e0a24a'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="images/icon.png">
+<link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <script src="site.js" defer></script>
 </head>
@@ -19,172 +20,241 @@
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="bar">
-  <a class="mark" href="#main" aria-label="H3 Editor, back to the top">
-    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h8v6l-4 3.2L4 9z"/></svg>
-    <span>H3 Editor</span>
-  </a>
-  <nav class="links" aria-label="Sections">
-    <a href="#features">What it does</a>
-    <a href="#install">Install</a>
-    <a href="#models">Models</a>
-    <a href="#agents">Agents</a>
+  <nav class="bar-in" aria-label="Main">
+    <a class="mark" href="#main" aria-label="H3 Editor, back to the top">
+      <img src="images/icon.png" alt="" width="28" height="28">
+      <span>H3 Editor</span>
+    </a>
+    <div class="links">
+      <a href="#showcase">Showcase</a>
+      <a href="#editor">Editor</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#agents">Agents</a>
+    </div>
+    <span class="spacer"></span>
+    <details class="menu">
+      <summary class="btn quiet" aria-label="Sections"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary>
+      <div class="menu-list">
+        <a href="#showcase">Showcase</a>
+        <a href="#editor">Editor</a>
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#agents">Agents</a>
+      </div>
+    </details>
+    <a class="btn quiet with-icon" href="https://github.com/igorls/comfyui-h3-editor">
+      <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <a class="btn primary" href="#install">Install</a>
   </nav>
-  <span class="spacer"></span>
-  <a class="quiet with-icon" href="https://github.com/igorls/comfyui-h3-editor">
-    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-    <span>GitHub</span>
-  </a>
-  <a class="primary" href="#install">Install</a>
 </header>
 
 <main id="main">
-  <section class="hero wrap">
-    <h1>A video editor for MiniMax&nbsp;H3, inside ComfyUI.</h1>
-    <p class="lede">Write shots, render them on your own GPU, and cut picture and sound together. Do it by hand, or hand the same timeline to an agent.</p>
-    <div class="cmd hero-cmd">
-      <code>git clone https://github.com/<wbr>igorls/<wbr>comfyui-h3-editor</code>
-      <button class="copy" type="button" data-copy="git clone https://github.com/igorls/comfyui-h3-editor">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
-        <span>Copy</span>
-      </button>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-frame">
+      <video id="reel" class="hero-video" src="media/pass.mp4" poster="media/pass.jpg" muted loop playsinline autoplay preload="auto" aria-label="The pass: a kitchen scene of four shots made with H3 Editor"></video>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <h1 id="hero-title">A video editor for MiniMax&nbsp;H3, inside ComfyUI.</h1>
+        <p class="lede">Write shots in plain words, render them with their sound on your own GPU, and cut them together. By hand, or let an agent drive the same timeline.</p>
+        <div class="cmd">
+          <code>comfy node install h3-editor</code>
+          <button class="copy" type="button" data-copy="comfy node install h3-editor" aria-label="Copy the install command"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
+        </div>
+        <p class="hero-alt">Or search <strong>H3 Editor</strong> in ComfyUI-Manager. The registry listing is new, so while its first versions are in review, <a href="#install">clone it from GitHub</a>. Free software under the GPL-3.0.</p>
+      </div>
+      <div class="hero-foot">
+        <p class="hero-credit">The pass: four shots and their sound, 15 seconds, rendered with HyperFlow H3 Flash and exported from the editor.</p>
+        <button class="round" id="reel-sound" type="button" aria-pressed="false" aria-label="Sound">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+        </button>
+      </div>
     </div>
   </section>
 
-  <section class="room wrap" aria-label="A cut made with H3 Editor">
-    <div class="frame">
-      <div class="stage">
-        <div class="screen">
-          <video id="cut" src="media/pass.mp4" poster="media/pass.jpg" muted loop playsinline preload="auto" aria-label="A kitchen scene made with H3 Editor: four shots with their own sound"></video>
-        </div>
-        <div class="transport">
-          <button class="quiet tool flat" id="start" type="button" aria-label="Go to the start">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12"/><path class="solid" d="M17 6.8v10.4a.8.8 0 0 1-1.25.66L9.6 12.66a.8.8 0 0 1 0-1.32l6.15-5.2A.8.8 0 0 1 17 6.8z"/></svg>
-          </button>
-          <button class="quiet tool flat" id="prev" type="button" aria-label="Previous frame">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg>
-          </button>
-          <button class="quiet tool" id="play" type="button" aria-label="Pause">
-            <svg class="icon fill" viewBox="0 0 24 24" aria-hidden="true"><g class="when-playing"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></g><path class="when-paused" d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/></svg>
-          </button>
-          <button class="quiet tool flat" id="next" type="button" aria-label="Next frame">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5L15 12l-5.5 5.5"/></svg>
-          </button>
-          <button class="quiet tool flat" id="sound" type="button" aria-pressed="false" aria-label="Sound">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
-          </button>
-          <p class="clock"><b id="clock">00:01:12</b> <span>of 00:15:00</span></p>
-        </div>
+  <section class="section wrap" id="showcase" aria-labelledby="showcase-title">
+    <div class="head">
+      <h2 id="showcase-title">Written, then rendered.</h2>
+      <p>Five shots in the hard light where generated skin usually turns to plastic. Each one is a single 1080p render from HyperFlow H3 Flash with the Realism Slider, made in the editor from the words beside it, with H3's own sound. Nothing was retouched.</p>
+    </div>
+    <div class="show">
+      <div class="show-stage">
+        <video id="show-video" src="media/realism/harbor.mp4" poster="media/realism/harbor.jpg" muted loop playsinline preload="metadata" aria-label="Midday sun on a fisherman's face"></video>
+        <button class="round show-sound" id="show-sound" type="button" aria-pressed="false" aria-label="Sound">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+        </button>
       </div>
+      <div class="show-text" id="show-text" aria-live="polite">
+        <p class="show-label">What was written</p>
+        <p class="prompt" id="show-prompt"></p>
+        <dl class="facts" id="show-facts"></dl>
+      </div>
+      <div class="picks" role="tablist" aria-label="Choose a render">
+        <button role="tab" type="button" class="pick" data-shot="harbor" aria-selected="true"><img src="media/realism/harbor.jpg" alt="" width="1280" height="726" loading="lazy"><span>Midday sun</span></button>
+        <button role="tab" type="button" class="pick" data-shot="golden-hour" aria-selected="false" tabindex="-1"><img src="media/realism/golden-hour.jpg" alt="" width="1280" height="726" loading="lazy"><span>Low sun behind</span></button>
+        <button role="tab" type="button" class="pick" data-shot="neon-rain" aria-selected="false" tabindex="-1"><img src="media/realism/neon-rain.jpg" alt="" width="1280" height="726" loading="lazy"><span>Neon in the rain</span></button>
+        <button role="tab" type="button" class="pick" data-shot="candlelight" aria-selected="false" tabindex="-1"><img src="media/realism/candlelight.jpg" alt="" width="1280" height="726" loading="lazy"><span>One candle, with dialogue</span></button>
+        <button role="tab" type="button" class="pick" data-shot="boxer" aria-selected="false" tabindex="-1"><img src="media/realism/boxer.jpg" alt="" width="1280" height="726" loading="lazy"><span>A gym lamp on sweat</span></button>
+      </div>
+    </div>
+  </section>
 
-      <aside class="side">
-        <div class="seg" role="tablist" aria-label="Show this shot">
-          <button role="tab" id="tab-hand" type="button" aria-selected="true" aria-controls="pane-hand">In the editor</button>
-          <button role="tab" id="tab-agent" type="button" aria-selected="false" aria-controls="pane-agent" tabindex="-1">From an agent</button>
-        </div>
-        <div class="pane" id="pane-hand" role="tabpanel" aria-labelledby="tab-hand">
-          <div class="shot-head">
-            <h2 id="shot-name">Wide</h2>
-            <p id="shot-meta">Final, 3 s</p>
+  <section class="section wrap" id="editor" aria-labelledby="editor-title">
+    <div class="head">
+      <h2 id="editor-title">One timeline, by hand or by agent.</h2>
+      <p>This is the kitchen cut as the editor holds it. Drag the playhead: the panel shows the shot under it as you would write it, or as an agent sends it over HTTP. Both land on the same timeline, and every change is a revision you can go back to.</p>
+    </div>
+    <div class="window">
+      <div class="room">
+        <div class="stage">
+          <div class="screen">
+            <video id="cut" src="media/pass.mp4" poster="media/pass.jpg" muted loop playsinline preload="metadata" aria-label="The pass, playing in the editor's viewer"></video>
           </div>
-          <dl class="fields">
-            <div><dt>What happens</dt><dd class="field tall" id="f-action"></dd></div>
-            <div><dt>Camera</dt><dd class="field" id="f-camera"></dd></div>
-            <div><dt>Cast</dt><dd class="field cast"><span id="cast-who"><img src="media/chef.jpg" alt="" width="28" height="28">Chef</span><span id="cast-none" class="none" hidden>No one</span></dd></div>
-            <div class="pair" id="speech">
-              <div><dt>Who speaks</dt><dd class="field" id="f-speaker"></dd></div>
-              <div><dt>What they say</dt><dd class="field" id="f-dialogue"></dd></div>
-            </div>
-            <div><dt>Sound</dt><dd class="field" id="f-sound"></dd></div>
-          </dl>
+          <div class="transport">
+            <button class="tool" id="start" type="button" aria-label="Go to the start">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12"/><path class="solid" d="M17 6.8v10.4a.8.8 0 0 1-1.25.66L9.6 12.66a.8.8 0 0 1 0-1.32l6.15-5.2A.8.8 0 0 1 17 6.8z"/></svg>
+            </button>
+            <button class="tool" id="prev" type="button" aria-label="Previous frame">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg>
+            </button>
+            <button class="tool play" id="play" type="button" aria-label="Play">
+              <svg class="icon fill" viewBox="0 0 24 24" aria-hidden="true"><g class="when-playing"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></g><path class="when-paused" d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/></svg>
+            </button>
+            <button class="tool" id="next" type="button" aria-label="Next frame">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5L15 12l-5.5 5.5"/></svg>
+            </button>
+            <button class="tool" id="sound" type="button" aria-pressed="false" aria-label="Sound">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="when-sound" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="when-muted" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+            </button>
+            <p class="clock"><b id="clock">00:01:12</b> <span>of 00:15:00</span></p>
+          </div>
         </div>
-        <div class="pane" id="pane-agent" role="tabpanel" aria-labelledby="tab-agent" hidden>
-          <pre class="term" tabindex="0" aria-label="The commands an agent runs"><code id="term"></code></pre>
-          <p class="file-label"><code>shots.json</code>, the entry for <span id="file-name">Wide</span></p>
-          <pre class="term" tabindex="0" aria-label="The shot as an operation"><code id="file"></code></pre>
-          <p class="note">An agent writes the shot like this with the h3-editor skill. It shows up in your open editor the moment it lands.</p>
-        </div>
-      </aside>
 
-      <div class="timeline">
-        <div class="heads" aria-hidden="true"><span></span><span>Picture</span><span>Sound</span></div>
-        <div class="track" id="track" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="359" aria-valuenow="36" aria-valuetext="00:01:12, Wide">
-          <div class="ruler" id="ruler" aria-hidden="true"></div>
-          <div class="lane picture" id="picture" aria-hidden="true"></div>
-          <div class="lane sound" aria-hidden="true"><svg id="wave" preserveAspectRatio="none" viewBox="0 0 240 40"></svg></div>
-          <div class="playhead" id="playhead" aria-hidden="true"></div>
+        <aside class="side">
+          <div class="seg" role="tablist" aria-label="Show this shot">
+            <button role="tab" id="tab-hand" type="button" aria-selected="true" aria-controls="pane-hand">In the editor</button>
+            <button role="tab" id="tab-agent" type="button" aria-selected="false" aria-controls="pane-agent" tabindex="-1">From an agent</button>
+          </div>
+          <div class="pane" id="pane-hand" role="tabpanel" aria-labelledby="tab-hand">
+            <div class="shot-head">
+              <h3 id="shot-name">Wide</h3>
+              <p id="shot-meta">Final, 3 s</p>
+            </div>
+            <dl class="fields">
+              <div><dt>What happens</dt><dd class="field tall" id="f-action"></dd></div>
+              <div><dt>Camera</dt><dd class="field" id="f-camera"></dd></div>
+              <div><dt>Cast</dt><dd class="field cast"><span id="cast-who"><img src="media/chef.jpg" alt="" width="28" height="28">Chef</span><span id="cast-none" class="none" hidden>No one</span></dd></div>
+              <div class="pair" id="speech">
+                <div><dt>Who speaks</dt><dd class="field" id="f-speaker"></dd></div>
+                <div><dt>What they say</dt><dd class="field" id="f-dialogue"></dd></div>
+              </div>
+              <div><dt>Sound</dt><dd class="field" id="f-sound"></dd></div>
+            </dl>
+          </div>
+          <div class="pane" id="pane-agent" role="tabpanel" aria-labelledby="tab-agent" hidden>
+            <pre class="term" tabindex="0" aria-label="The commands an agent runs"><code id="term"></code></pre>
+            <p class="file-label"><code>shots.json</code>, the entry for <span id="file-name">Wide</span></p>
+            <pre class="term" tabindex="0" aria-label="The shot as an operation"><code id="file"></code></pre>
+            <p class="note">An agent writes the shot like this with the h3-editor skill. It shows up in your open editor the moment it lands.</p>
+          </div>
+        </aside>
+
+        <div class="timeline">
+          <div class="heads" aria-hidden="true"><span></span><span>Picture</span><span>Sound</span></div>
+          <div class="track" id="track" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="359" aria-valuenow="36" aria-valuetext="00:01:12, Wide">
+            <div class="ruler" id="ruler" aria-hidden="true"></div>
+            <div class="lane picture" id="picture" aria-hidden="true"></div>
+            <div class="lane sound" aria-hidden="true"><svg id="wave" preserveAspectRatio="none" viewBox="0 0 240 40"></svg></div>
+            <div class="playhead" id="playhead" aria-hidden="true"></div>
+          </div>
         </div>
       </div>
     </div>
-    <p class="credit">This kitchen scene was written and rendered by an agent through the editor's API, and exported from the editor as you see it: four shots of HyperFlow H3 Flash with their own sound, 15 seconds. The chef is one cast member, made from a single picture.</p>
+    <p class="credit">An agent wrote and rendered this scene through the editor's API: four shots with their own sound, and one cast member made from a single picture.</p>
   </section>
 
-  <section class="section wrap film" id="film">
-    <h2>The launch film</h2>
-    <video src="media/launch.mp4" poster="media/launch.jpg" controls playsinline preload="none" aria-label="The H3 Editor launch film, 24 seconds: a node graph folds into a line that writes a shot, and the sentence becomes the shot"></video>
-    <p class="credit">The three shots in it are the ones above, rendered in the editor with their sound. The graphics around them are code, built by a coding agent with the open-source <a href="https://github.com/igorls/motion-graphics">motion-graphics skill</a>; the music was generated with YuE2.</p>
-  </section>
-
-  <section class="section wrap" id="features">
-    <h2>What it does</h2>
-    <ul class="rows">
-      <li>
-        <h3>Write shots, not graphs.</h3>
-        <p>Describe what happens and what is said. The editor builds the ComfyUI graph, queues it, and shows the clip moving, with sound, while it samples.</p>
-        <p class="ctls"><span class="ctl">What happens</span><span class="ctl">Render draft</span></p>
-      </li>
-      <li>
-        <h3>Keep people and places the same.</h3>
-        <p>Add their pictures to the cast, up to 8 per member, and write @Name in a shot or drag the member into the text. Give them a voice, or add a narrator who is only a voice.</p>
-        <p class="ctls"><span class="ctl">Add reference</span><span class="ctl">Add voice</span></p>
-      </li>
-      <li>
-        <h3>Join shots without a visible cut.</h3>
-        <p>Extend a clip forward or back, bridge two clips, or merge a join. A new clip carries on from 39 real frames and the sound of the clips it joins. An empty space between two clips offers the bridge.</p>
-        <p class="ctls"><span class="ctl">Generate</span><span class="ctl">Extend forward</span><span class="ctl">Bridge to next</span><span class="ctl">Merge with next</span></p>
-      </li>
-      <li>
-        <h3>Edit as in any editor.</h3>
-        <p>Trim, split, move, change speed, add transitions, flip between takes, file clips in bins, bring in your own footage and pictures, and export one video. Moving a rendered clip never renders it again.</p>
-        <p class="ctls"><span class="ctl">Split</span><span class="ctl">Ripple delete</span><span class="ctl">Export</span></p>
-      </li>
-      <li>
-        <h3>Add music and narration.</h3>
-        <p>Lay sound files under the cut on lanes of their own. Move them, trim them and set their volume; they play in step with the picture, and the export mixes them in.</p>
-        <p class="ctls"><span class="ctl">Add sound</span></p>
-      </li>
-      <li>
-        <h3>Try fast, finish large.</h3>
-        <p>Drafts are small and quick. Finals are refined at up to 1920 pixels, with a realism LoRA for natural skin.</p>
-        <p class="ctls"><span class="ctl">Render draft</span><span class="ctl">Render final</span></p>
-      </li>
-      <li>
-        <h3>Bring your own models and LoRAs.</h3>
-        <p>Eight H3 models are built in, and any other H3 checkpoint works with its own steps, sampler and scheduler, for the whole project or for one clip. Add LoRAs to the project or to one clip, set each one's strength, and choose whether it runs on every step or joins after the first ones.</p>
-        <p class="ctls"><span class="ctl">Models and their settings</span><span class="ctl">LoRAs</span><span class="ctl">LoRAs for this clip</span></p>
-      </li>
-      <li>
-        <h3>Generate to a recorded voice.</h3>
-        <p>Give a clip a recorded track, such as an approved narration, and its picture is generated to it. Extend forward carries on with the next part of the same track.</p>
-        <p class="ctls"><span class="ctl">Track</span></p>
-      </li>
-      <li>
-        <h3>Let an agent make the video.</h3>
-        <p>Everything the editor does is an HTTP call, and an agent skill teaches the whole workflow. You and an agent can work on one project at once.</p>
-        <p class="ctls"><span class="ctl">scripts/h3.py</span></p>
-      </li>
-    </ul>
-    <figure class="shot">
-      <img src="images/editor.jpg" width="2880" height="1760" loading="lazy" alt="The editor with a kitchen scene open: clips and cast on the left, the viewer in the middle, the selected clip's Shot tab with what happens, the camera and the render buttons on the right, and four clips with their sound on the timeline below.">
-      <figcaption>The whole editor, on one screen: clips and cast, the viewer, the selected clip in tabs, and the timeline. It opens from ComfyUI's sidebar and needs no other custom node pack.</figcaption>
+  <section class="section wrap" id="features" aria-labelledby="features-title">
+    <div class="head">
+      <h2 id="features-title">Everything a cut needs, on one screen.</h2>
+      <p>Clips and cast on the left, the viewer in the middle, the selected clip in tabs on the right, the timeline below. It opens from ComfyUI's sidebar and needs no other custom node pack.</p>
+    </div>
+    <figure class="shot-full">
+      <picture>
+        <source media="(max-width: 640px)" srcset="images/editor-mobile.jpg" width="764" height="1065">
+        <img src="images/editor.jpg" width="2880" height="1760" loading="lazy" alt="H3 Editor 0.9.1 with the kitchen scene open: clips and cast on the left, the viewer, the Face clip's shot text, camera and render buttons on the right, and four clips with their sound on the timeline, the Face clip selected.">
+      </picture>
     </figure>
+
+    <div class="bento">
+      <article class="tile wide">
+        <div class="tile-text">
+          <h3>Join shots without a visible cut.</h3>
+          <p>Extend a clip forward or back, bridge two clips, or merge a join. The new clip carries on from the frames and sound of the clips it joins, held as H3's own latents rather than read back from the video.</p>
+        </div>
+        <picture>
+          <source media="(max-width: 640px)" srcset="images/generate-menu.jpg" width="680" height="750">
+          <img src="images/generate.jpg" width="1152" height="840" loading="lazy" alt="The Generate menu open over the timeline: Extend back, Extend forward, Bridge to next, Bridge into its movement and Merge with next, with the Face clip selected.">
+        </picture>
+      </article>
+      <article class="tile tall">
+        <div class="tile-text">
+          <h3>See where a cut fails.</h3>
+          <p>Every cut is scored from its pictures and its sound as clips render. Jumps, fades, frozen frames, drift and sound that steps at a cut are listed worst first, each a click away.</p>
+        </div>
+        <img src="images/checks.jpg" width="886" height="1000" loading="lazy" alt="The Checks list of a project: fades inside takes, sound jumps of 35 and 16 dB at cuts, a take that ends 34 dB louder than it begins, and a bridge that does not arrive on the next clip.">
+      </article>
+      <article class="tile tall">
+        <div class="tile-text">
+          <h3>Write, or have it written.</h3>
+          <p>Describe the video and a language model writes the shots as clips, or rewrites one from what you ask. A model that can see gets the cast's pictures. Run the model in ComfyUI itself and nothing leaves the machine.</p>
+        </div>
+        <img src="images/writer.jpg" width="1040" height="1236" loading="lazy" alt="The Write shots dialog: a description of a kitchen scene, 4 shots of 5 seconds each, the cast picture of @Chef it sends along, and the local text model run by ComfyUI that writes them.">
+
+      </article>
+    </div>
+
+    <ul class="rows">
+      <li><h3>Keep people and places the same.</h3><p>Up to 8 pictures and a voice per cast member, written as @Name in a shot. Save them to a catalog and bring them into any project.</p></li>
+      <li><h3>Add music and narration.</h3><p>Sound files on lanes of their own under the cut, trimmed and mixed in at export. Give a clip a recorded voice and its picture is generated to it.</p></li>
+      <li><h3>Try fast, finish large.</h3><p>Drafts are small and quick. Finals are refined at up to 1920 pixels, or at a size of your own; Upscale 2x takes a final to 3840.</p></li>
+      <li><h3>Pick the model, per project or per clip.</h3><p>HyperFlow H3 Flash, MiniMax H3 and five more are built in, with any other H3 checkpoint, your LoRAs and model patches such as sparse attention.</p></li>
+      <li><h3>Draw clips with code.</h3><p>A VFX lane holds titles, captions and transitions drawn by a small script over the picture below, rendered in seconds with no GPU model.</p></li>
+      <li><h3>Leave notes on frames.</h3><p>Pin a spot, drag a box or draw on the picture and write what should change. An agent reads the notes with the frame they sit on.</p></li>
+      <li><h3>Take a project anywhere.</h3><p>Pack it as one zip and open it on another machine or a cloud GPU. A Colab notebook renders finals on a bigger GPU and brings them home.</p></li>
+      <li><h3>Edit as in any editor.</h3><p>Trim, split, slip, move, change speed, add transitions, flip between takes, file clips in bins, import footage, export one video.</p></li>
+    </ul>
   </section>
 
-  <section class="section wrap" id="install">
-    <h2>Install</h2>
+  <section class="section wrap" id="film" aria-labelledby="film-title">
+    <div class="head">
+      <h2 id="film-title">The launch film.</h2>
+      <p>The three shots in it come from the kitchen scene above, rendered in the editor with their sound. The graphics around them are code, built by a coding agent with the open-source <a href="https://github.com/igorls/motion-graphics">motion-graphics skill</a>; the music was generated with YuE2.</p>
+    </div>
+    <div class="film">
+      <button class="film-play" id="film-play" type="button" aria-label="Play the launch film, with sound">
+        <svg class="icon fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/></svg>
+        <span>Play, 24 s</span>
+      </button>
+      <video id="film-video" src="media/launch.mp4" poster="media/launch.jpg" playsinline preload="none" aria-label="The H3 Editor launch film, 24 seconds: a node graph folds into a line that writes a shot, and the sentence becomes the shot"></video>
+    </div>
+  </section>
+
+  <section class="section wrap" id="install" aria-labelledby="install-title">
+    <div class="head">
+      <h2 id="install-title">Install.</h2>
+      <p>You need a recent ComfyUI with its built-in MiniMax H3 support, 0.43 or newer. The pack is tested on 0.44.</p>
+    </div>
     <ol class="steps">
       <li>
         <h3>Add the pack to ComfyUI</h3>
-        <p>You need a recent ComfyUI with its built-in MiniMax H3 support. In ComfyUI's <code>custom_nodes</code> folder:</p>
+        <p>From the Comfy Registry: search for <strong>H3 Editor</strong> in ComfyUI-Manager, or use comfy-cli. It installs into <code>custom_nodes/h3-editor</code>, with its requirements. The listing is new, and until its first versions clear the registry's review this command finds nothing to install; the GitHub route below works today.</p>
+        <div class="cmd">
+          <code>comfy node install h3-editor</code>
+          <button class="copy" type="button" data-copy="comfy node install h3-editor" aria-label="Copy the install command"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
+        </div>
+        <p>Or from GitHub, in ComfyUI's <code>custom_nodes</code> folder:</p>
         <div class="cmd">
           <code>git clone https://github.com/<wbr>igorls/<wbr>comfyui-h3-editor</code>
           <button class="copy" type="button" data-copy="git clone https://github.com/igorls/comfyui-h3-editor"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
@@ -193,34 +263,37 @@
           <code>pip install -r comfyui-h3-editor/<wbr>requirements.txt</code>
           <button class="copy" type="button" data-copy="pip install -r comfyui-h3-editor/requirements.txt"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
         </div>
-        <p class="small">On the Windows portable build, run the second step as <code>..\python_embeded\python.exe <span class="nowrap">-m pip</span> install -r comfyui-h3-editor\<wbr>requirements.txt</code>. The requirements bring ffmpeg, for importing and exporting video, and the gguf reader for HyperFlow's GGUF models.</p>
+        <p class="small">On the Windows portable build, run the second step as <code>..\python_embeded\python.exe -m pip install -r comfyui-h3-editor\<wbr>requirements.txt</code>. The requirements bring ffmpeg, for importing and exporting video, and the gguf reader for HyperFlow's GGUF models. Keep one copy: the two routes use different folders, and ComfyUI would load both. Your projects live in ComfyUI's output folder, not in the pack's.</p>
         <p>Restart ComfyUI. <strong>H3 Editor</strong> appears in the sidebar.</p>
       </li>
 
       <li id="models">
         <h3>Download the models</h3>
         <p>The pack does not download models. These are the ones a first video needs, about 54&nbsp;GB:</p>
-        <table class="models">
-          <thead><tr><th scope="col">File</th><th scope="col">Folder</th><th scope="col" class="num">Size</th><th scope="col">Where to get it</th></tr></thead>
-          <tbody>
-            <tr><td data-label="File"><code>qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors</code></td><td data-label="Folder"><code>models/<wbr>text_encoders</code></td><td data-label="Size" class="num">15.7 GB</td><td data-label="From"><span><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>text_encoders/</code></span></td></tr>
-            <tr><td data-label="File"><code>minimax_h3_video_vae_fp16.safetensors</code></td><td data-label="Folder"><code>models/vae</code></td><td data-label="Size" class="num">5.2 GB</td><td data-label="From"><span><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>vae/</code></span></td></tr>
-            <tr><td data-label="File"><code>minimax_h3_audio_vae_fp32.safetensors</code></td><td data-label="Folder"><code>models/vae</code></td><td data-label="Size" class="num">0.6 GB</td><td data-label="From"><span><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>vae/</code></span></td></tr>
-            <tr><td data-label="File"><code>minimax_h3_ref2va_hyperflow_flash_14b-int8_convrot.safetensors</code></td><td data-label="Folder"><code>models/<wbr>diffusion_models/<wbr>hyperflow</code></td><td data-label="Size" class="num">16.4 GB</td><td data-label="From"><span><a href="https://huggingface.co/VideoRebirthAI/hyperflow-h3-flash">VideoRebirthAI/hyperflow-h3-flash</a>, <code>ref2va_int8_convrot_comfyui/</code></span></td></tr>
-            <tr><td data-label="File"><code>minimax_h3_fl2va_hyperflow_flash_14b-int8_convrot.safetensors</code></td><td data-label="Folder"><code>models/<wbr>diffusion_models/<wbr>hyperflow</code></td><td data-label="Size" class="num">16.0 GB</td><td data-label="From"><span><a href="https://huggingface.co/VideoRebirthAI/hyperflow-h3-flash">VideoRebirthAI/hyperflow-h3-flash</a>, <code>fl2va_int8_convrot_comfyui/</code></span></td></tr>
-          </tbody>
-        </table>
-        <p class="small">HyperFlow's model page recommends these INT8 files on RTX GPUs with 24&nbsp;GB or more. On a smaller GPU, take its GGUF files in their place, from Q8_0 at 15.2&nbsp;GB down to Q3_K_M at 7.2&nbsp;GB, anywhere in <code>models/diffusion_models</code>; see <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/docs/models.md#hyperflows-other-files">models and quality</a>.</p>
+        <div class="table">
+          <table>
+            <thead><tr><th scope="col">File</th><th scope="col">Folder</th><th scope="col" class="num">Size</th><th scope="col">Where to get it</th></tr></thead>
+            <tbody>
+              <tr><td data-label="File"><code>qwen3vl_<wbr>32b_<wbr>minimax_<wbr>h3_<wbr>nvfp4_<wbr>awq.<wbr>safetensors</code></td><td data-label="Folder"><code>models/<wbr>text_encoders</code></td><td data-label="Size" class="num">15.7 GB</td><td data-label="From"><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>text_encoders/</code></td></tr>
+              <tr><td data-label="File"><code>minimax_<wbr>h3_<wbr>video_<wbr>vae_<wbr>fp16.<wbr>safetensors</code></td><td data-label="Folder"><code>models/vae</code></td><td data-label="Size" class="num">5.2 GB</td><td data-label="From"><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>vae/</code></td></tr>
+              <tr><td data-label="File"><code>minimax_<wbr>h3_<wbr>audio_<wbr>vae_<wbr>fp32.<wbr>safetensors</code></td><td data-label="Folder"><code>models/vae</code></td><td data-label="Size" class="num">0.6 GB</td><td data-label="From"><a href="https://huggingface.co/Comfy-Org/MiniMax-H3">Comfy-Org/MiniMax-H3</a>, <code>vae/</code></td></tr>
+              <tr><td data-label="File"><code>minimax_<wbr>h3_<wbr>ref2va_<wbr>hyperflow_<wbr>flash_<wbr>14b-int8_<wbr>convrot.<wbr>safetensors</code></td><td data-label="Folder"><code>models/<wbr>diffusion_models/<wbr>hyperflow</code></td><td data-label="Size" class="num">16.4 GB</td><td data-label="From"><a href="https://huggingface.co/VideoRebirthAI/hyperflow-h3-flash">VideoRebirthAI/hyperflow-h3-flash</a>, <code>ref2va_int8_convrot_comfyui/</code></td></tr>
+              <tr><td data-label="File"><code>minimax_<wbr>h3_<wbr>fl2va_<wbr>hyperflow_<wbr>flash_<wbr>14b-int8_<wbr>convrot.<wbr>safetensors</code></td><td data-label="Folder"><code>models/<wbr>diffusion_models/<wbr>hyperflow</code></td><td data-label="Size" class="num">16.0 GB</td><td data-label="From"><a href="https://huggingface.co/VideoRebirthAI/hyperflow-h3-flash">VideoRebirthAI/hyperflow-h3-flash</a>, <code>fl2va_int8_convrot_comfyui/</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small">HyperFlow's model page recommends these INT8 files on RTX GPUs with 24&nbsp;GB or more. On a smaller GPU, take its GGUF files in their place, from Q8_0 at 15.2&nbsp;GB down to Q3_K_M at 7.2&nbsp;GB, anywhere in <code>models/diffusion_models</code>. A Qwen3-VL 4B or 8B can stand in for the 32B text encoder in about a third of the memory. <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/docs/models.md">Models and quality</a> has both.</p>
         <p>These are optional, and worth having:</p>
-        <table class="models">
-          <thead><tr><th scope="col">File</th><th scope="col">Folder</th><th scope="col" class="num">Size</th><th scope="col">Where to get it</th></tr></thead>
-          <tbody>
-            <tr><td data-label="File"><code>minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors</code><span class="for">Finals at up to 1920 pixels</span></td><td data-label="Folder"><code>models/<wbr>latent_upscale_models</code></td><td data-label="Size" class="num">0.7 GB</td><td data-label="From"><a href="https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler">LBH-123-AI/Minimax_h3_latent_Upscaler</a></td></tr>
-            <tr><td data-label="File"><code>MMH3-Realism-V2.safetensors</code><span class="for">Natural skin in finals</span></td><td data-label="Folder"><code>models/loras</code></td><td data-label="Size" class="num">71 MB</td><td data-label="From"><a href="https://civitai.com/models/3041489">Civitai model 3041489</a></td></tr>
-            <tr><td data-label="File"><code>taeh3.safetensors</code><span class="for">The moving live preview</span></td><td data-label="Folder"><code>models/<wbr>vae_approx</code></td><td data-label="Size" class="num">23 MB</td><td data-label="From"><a href="https://huggingface.co/OzzyGT/taeh3">OzzyGT/taeh3</a></td></tr>
-          </tbody>
-        </table>
-        <p class="small">Other H3 checkpoints work as well. Seven more are built in, and you can add any H3 checkpoint file with its own steps, sampler and scheduler, and LoRAs trained on H3. <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/docs/models.md">Models and quality</a> has the details.</p>
+        <div class="table">
+          <table>
+            <thead><tr><th scope="col">File</th><th scope="col">Folder</th><th scope="col" class="num">Size</th><th scope="col">Where to get it</th></tr></thead>
+            <tbody>
+              <tr><td data-label="File"><code>minimax_<wbr>h3_<wbr>latent_<wbr>upscaler_<wbr>3d_<wbr>conv_<wbr>v1_<wbr>bf16.<wbr>safetensors</code><span class="for">Finals at up to 1920 pixels</span></td><td data-label="Folder"><code>models/<wbr>latent_upscale_models</code></td><td data-label="Size" class="num">0.7 GB</td><td data-label="From"><a href="https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler">LBH-123-AI/Minimax_h3_latent_Upscaler</a></td></tr>
+              <tr><td data-label="File"><code>MMH3-Realism-V2.<wbr>safetensors</code><span class="for">Natural skin in finals</span></td><td data-label="Folder"><code>models/loras</code></td><td data-label="Size" class="num">71 MB</td><td data-label="From"><a href="https://civitai.com/models/3041489">Civitai model 3041489</a></td></tr>
+              <tr><td data-label="File"><code>taeh3.<wbr>safetensors</code><span class="for">The moving live preview</span></td><td data-label="Folder"><code>models/<wbr>vae_approx</code></td><td data-label="Size" class="num">23 MB</td><td data-label="From"><a href="https://huggingface.co/OzzyGT/taeh3">OzzyGT/taeh3</a></td></tr>
+            </tbody>
+          </table>
+        </div>
       </li>
 
       <li>
@@ -237,37 +310,52 @@
     </ol>
   </section>
 
-  <section class="section wrap agents" id="agents">
+  <section class="section wrap agents" id="agents" aria-labelledby="agents-title">
     <div class="agents-text">
-      <h2>For agents</h2>
-      <p>Everything the editor does is an HTTP call. The <strong>h3-editor</strong> skill teaches an agent the whole workflow: plan the shots, render drafts, review them, join them, render finals and export. Its client, <code>scripts/h3.py</code>, needs only Python.</p>
+      <h2 id="agents-title">For agents.</h2>
+      <p>Everything the editor does is an HTTP call. The <strong>h3-editor</strong> skill teaches an agent the whole workflow: plan the shots, render drafts, review them, join them, read the cut scores, render finals and export. Its client, <code>scripts/h3.py</code>, needs only Python.</p>
       <p>To install it, copy <code>skills/h3-editor</code> from the repo into your agent's skills folder.</p>
       <p>The editor is a shared cutting room. An agent's changes appear in your open editor as it works, yours merge with its, and every change is a revision you can go back to.</p>
       <p class="more"><a href="https://github.com/igorls/comfyui-h3-editor/blob/main/skills/h3-editor/SKILL.md">Read the skill</a><a href="https://github.com/igorls/comfyui-h3-editor/blob/main/skills/h3-editor/references/api.md">The full API</a></p>
     </div>
-    <pre class="term" tabindex="0" aria-label="An agent's session with scripts/h3.py"><code><span class="p">$</span> python h3.py check
+    <pre class="term big" tabindex="0" aria-label="An agent's session with scripts/h3.py"><code><span class="p">$</span> python h3.py check
 <span class="p">$</span> python h3.py create "The pass"
 <span class="o">The_pass</span>
 <span class="p">$</span> python h3.py ops The_pass shots.json
 <span class="p">$</span> python h3.py wait The_pass
-<span class="p">$</span> python h3.py look The_pass
+<span class="p">$</span> python h3.py cuts The_pass
 <span class="p">$</span> python h3.py render The_pass c822cf892 cc2eecf3a caa4b5e11 c23560c00 --final
 <span class="p">$</span> python h3.py export The_pass
 <span class="o">Exported to ComfyUI's output folder:
 h3take_projects/The_pass/exports/The_pass_001.mp4</span></code></pre>
   </section>
+
+  <section class="close wrap" aria-labelledby="close-title">
+    <h2 id="close-title">Make your first cut.</h2>
+    <div class="cmd">
+      <code>comfy node install h3-editor</code>
+      <button class="copy" type="button" data-copy="comfy node install h3-editor" aria-label="Copy the install command"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
+    </div>
+    <p class="close-note">While the registry reviews its first versions, install it from GitHub:</p>
+    <div class="cmd">
+      <code>git clone https://github.com/igorls/comfyui-h3-editor</code>
+      <button class="copy" type="button" data-copy="git clone https://github.com/igorls/comfyui-h3-editor"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button>
+    </div>
+    <p class="close-links"><a class="btn quiet" href="#models">The models it needs</a><a class="btn quiet" href="https://github.com/igorls/comfyui-h3-editor">GitHub</a></p>
+  </section>
 </main>
 
 <footer class="foot wrap">
   <div>
-    <p><strong>H3 Editor</strong> is free software under the <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/LICENSE">GNU General Public License v3.0</a>. Parts are adapted from ComfyUI-HyperFlow-Flash, ComfyUI-GGUF and ComfyUI-MiniMax-H3-Turbo and keep their own licenses, listed in <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/NOTICE">NOTICE</a>. Model files come under their own licenses.</p>
-    <p>So far the editor has been tested on one 96&nbsp;GB GPU. If ComfyUI runs out of memory, try one of HyperFlow's GGUF files, which come in smaller sizes.</p>
+    <p><strong>H3 Editor</strong> is free software under the <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/LICENSE">GNU General Public License v3.0</a>. Parts are adapted from ComfyUI-HyperFlow-Flash, ComfyUI-GGUF and ComfyUI-MiniMax-H3-Turbo and keep their own licenses, listed in <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/NOTICE">NOTICE</a>. Model files come under their own licenses. Set in Geist, under the SIL Open Font License.</p>
+    <p>So far the editor has been tested on one 96&nbsp;GB GPU. If ComfyUI runs out of memory, pick a smaller final size, one of HyperFlow's GGUF files or the smaller text encoder, or render finals on Colab.</p>
   </div>
   <nav aria-label="Documentation">
-    <a href="https://github.com/igorls/comfyui-h3-editor">GitHub</a>
     <a href="https://github.com/igorls/comfyui-h3-editor#readme">README</a>
+    <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/CHANGELOG.md">Changelog</a>
     <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/docs/models.md">Models and quality</a>
     <a href="https://github.com/igorls/comfyui-h3-editor/blob/main/docs/nodes.md">The nodes</a>
+    <a href="https://registry.comfy.org/publishers/igorls/nodes/h3-editor">Comfy Registry</a>
     <a href="llms.txt">llms.txt</a>
   </nav>
 </footer>

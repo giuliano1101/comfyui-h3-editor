@@ -1,22 +1,26 @@
 # H3 Editor
 
-> A timeline video editor for MiniMax H3 that runs inside ComfyUI. Write shots, render them on your own GPU, and cut picture and sound together. Everything the editor does is an HTTP call, and an agent skill teaches the whole workflow. It needs no other custom node pack.
+> A timeline video editor for MiniMax H3 that runs inside ComfyUI. Write shots, render them with their sound on your own GPU, and cut picture and sound together. Everything the editor does is an HTTP call, and an agent skill teaches the whole workflow. It needs no other custom node pack.
 
-H3 Editor is a ComfyUI custom node pack under the GNU GPL v3.0. To install it, run `git clone https://github.com/igorls/comfyui-h3-editor` in ComfyUI's `custom_nodes` folder, then `pip install -r comfyui-h3-editor/requirements.txt`, and restart ComfyUI. It needs a recent ComfyUI with its built-in MiniMax H3 support and about 54 GB of model files, which the pack does not download. The editor opens from ComfyUI's sidebar, at `/h3take/editor` on the ComfyUI server (by default `http://127.0.0.1:8188`). Renders run on that ComfyUI's GPU. So far it has been tested on one 96 GB GPU.
+H3 Editor is a ComfyUI custom node pack under the GNU GPL v3.0, published on the Comfy Registry as `h3-editor`. To install it, run `comfy node install h3-editor` or search for H3 Editor in ComfyUI-Manager; or run `git clone https://github.com/igorls/comfyui-h3-editor` in ComfyUI's `custom_nodes` folder, then `pip install -r comfyui-h3-editor/requirements.txt`. Keep one copy: the two routes use different folders. Restart ComfyUI afterwards. It needs ComfyUI 0.43 or newer, with its built-in MiniMax H3 support, and about 54 GB of model files, which the pack does not download. The editor opens from ComfyUI's sidebar, at `/h3take/editor` on the ComfyUI server (by default `http://127.0.0.1:8188`). Renders run on that ComfyUI's GPU. So far it has been tested on one 96 GB GPU.
+
+What it does: clips written as shots (what happens, camera, cast, speech, sound), drafts and finals of up to 1920 pixels or a size of your own, extensions, bridges and merges that hold the joined clips' own latents, a cast with pictures and voices and a catalog shared between projects, sound lanes, VFX clips drawn by code, notes on frames, scores and checks for every cut (picture, sound and camera movement), writing shots with a language model, built-in H3 checkpoints plus any other, LoRAs, model patches from other installed packs, project zips and a Colab notebook for finals on a bigger GPU.
 
 ## For agents
 
-- [Agent skill](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/skills/h3-editor/SKILL.md): how to plan shots, render drafts, review them, join them, render finals and export through the editor's HTTP API
+- [Agent skill](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/skills/h3-editor/SKILL.md): how to plan shots, render drafts, review them, join them, read the cut scores, render finals and export through the editor's HTTP API
 - [API reference](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/skills/h3-editor/references/api.md): the routes, the project model, every operation and its fields, replies and errors, the summary format, and lengths and timing
 - [h3.py](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/skills/h3-editor/scripts/h3.py): the command-line client the skill uses, Python standard library only
 
 ## Docs
 
 - [README](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/README.md): install, the exact model files with sizes and sources, a first video, using the editor, keys and troubleshooting
-- [Models and quality](https://igorls.github.io/comfyui-h3-editor/models.md): the built-in checkpoints, adding any other H3 checkpoint with its own steps, sampler and scheduler, picking a model per clip, a project's LoRAs and their strengths, how finals are refined, and how LoRAs land
+- [Changelog](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/CHANGELOG.md): what changed in each release, newest first
+- [Models and quality](https://igorls.github.io/comfyui-h3-editor/models.md): the built-in checkpoints, adding any other H3 checkpoint with its own steps, sampler and scheduler, a smaller text encoder, picking a model per clip, a project's LoRAs and model patches, how finals are refined, and how LoRAs land
 - [The nodes](https://igorls.github.io/comfyui-h3-editor/nodes.md): H3 Take and the pack's other nodes, for building your own ComfyUI workflows
 
 ## Optional
 
+- [Comfy Registry listing](https://registry.comfy.org/publishers/igorls/nodes/h3-editor): the published versions
 - [License](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/LICENSE): GNU General Public License v3.0
 - [NOTICE](https://raw.githubusercontent.com/igorls/comfyui-h3-editor/main/NOTICE): code adapted from other projects, and their licenses

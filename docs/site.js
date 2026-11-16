@@ -1,3 +1,147 @@
+// Plays a video while enough of it is on screen and `allowed()` says so, and pauses it when it leaves.
+function whileVisible(video, allowed) {
+  if (!("IntersectionObserver" in window)) { if (allowed()) video.play().catch(() => {}); return; }
+  new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting && allowed()) video.play().catch(() => {});
+      else if (!entry.isIntersecting && !video.paused) video.pause();
+    }
+  }, { threshold: 0.35 }).observe(video);
+}
+
+// The hero reel: muted until the visitor asks for sound, and still under reduced motion.
+(() => {
+  const reel = document.getElementById("reel");
+  const button = document.getElementById("reel-sound");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) { reel.removeAttribute("autoplay"); reel.pause(); }
+  button.addEventListener("click", () => {
+    reel.muted = !reel.muted;
+    button.setAttribute("aria-pressed", String(!reel.muted));
+    if (!reel.muted && reel.paused) reel.play().catch(() => {});
+  });
+  whileVisible(reel, () => !reduceMotion || !reel.muted);
+})();
+
+// The showcase: choosing a render swaps the clip and the words that made it, together.
+(() => {
+  const SHOTS = {
+    "harbor": {
+      label: "Midday sun on a fisherman's face", seed: 1248160305, seconds: "3.8 s",
+      prompt: "A weathered fisherman in his sixties stands on a harbor dock at midday. Hard sun from straight above lights his sunburnt face, with deep lines, grey stubble, and sweat and salt drying on his skin. He squints toward the sea, then turns his head slowly toward the camera. Fishing boats sit out of focus behind him. Camera: Close-up, handheld, slight drift. Sound: Gulls, water lapping against the dock, a distant boat engine.",
+    },
+    "golden-hour": {
+      label: "A woman in a wheat field at golden hour", seed: 155121007, seconds: "3.8 s",
+      prompt: "A young woman with red hair and freckles walks through a wheat field at golden hour. The low sun is behind her and lights the fine hair along her cheek and the edges of her face. She looks back over her shoulder toward the camera and smiles. Camera: Medium close-up, tracking beside her. Sound: Wind through the wheat, birdsong.",
+    },
+    "neon-rain": {
+      label: "A woman in neon light and rain", seed: 308467067, seconds: "3.8 s",
+      prompt: "A woman in her thirties stands on a city street at night in the rain. A pink neon sign on one side and a cyan one on the other light her face in two colours, and raindrops run down her cheeks and catch both colours. She blinks the rain away and looks up into it. Camera: Close-up, slow push in. Sound: Steady rain, distant traffic, the hum of neon signs.",
+    },
+    "candlelight": {
+      label: "An old woman by one candle, speaking", seed: 177889935, seconds: "5.2 s",
+      prompt: "Tight close-up of an old woman's face in her eighties, filling the frame from forehead to chin. A single candle burns just beside her face, its warm light falling across the deep wrinkles of one cheek and leaving the other side in shadow. Her silver hair is pinned back. She looks up from a letter she holds below the frame and speaks softly, with a small, tired smile. Camera: Tight close-up, locked off, shallow focus. Speaker: The old woman, soft and warm. Dialogue: \"He wrote that he would be home before the snow.\" Sound: A candle flame fluttering, a clock ticking in the room.",
+    },
+    "boxer": {
+      label: "A boxer between rounds under a gym lamp", seed: 606441076, seconds: "3.8 s",
+      prompt: "Close-up of a boxer in his late twenties sitting in the corner of a dim gym between rounds, his face and shoulders filling the frame. A single hanging lamp above lights the sweat on his forehead, cheekbones and shoulders. He breathes hard, then lifts his head and looks toward the camera, jaw set. The background is a dark, blurred gym wall. Camera: Close-up, handheld. Sound: Heavy breathing, a muffled crowd, a bell far off.",
+    },
+  };
+  const FACTS = (shot) => [
+    ["Model", "HyperFlow H3 Flash"],
+    ["LoRA", "Realism Slider V2, strength 1.2"],
+    ["Final", "1920 × 1088, " + shot.seconds + ", 24 fps"],
+    ["Seed", String(shot.seed)],
+  ];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const video = document.getElementById("show-video");
+  const stage = video.parentElement;
+  const prompt = document.getElementById("show-prompt");
+  const facts = document.getElementById("show-facts");
+  const sound = document.getElementById("show-sound");
+  const picks = [...document.querySelectorAll(".pick")];
+
+  function words(text) {
+    prompt.textContent = "";
+    prompt.classList.remove("in");
+    text.split(/(\s+)/).forEach((part, i) => {
+      if (/^\s+$/.test(part)) { prompt.append(part); return; }
+      const word = document.createElement("span");
+      word.className = "w";
+      word.textContent = part;
+      word.style.transitionDelay = Math.min(i * 6, 700) + "ms";
+      prompt.append(word);
+    });
+    requestAnimationFrame(() => requestAnimationFrame(() => prompt.classList.add("in")));
+  }
+
+  function choose(pick, focus) {
+    const id = pick.dataset.shot;
+    const shot = SHOTS[id];
+    picks.forEach((each) => {
+      const on = each === pick;
+      each.setAttribute("aria-selected", String(on));
+      each.tabIndex = on ? 0 : -1;
+    });
+    if (focus) pick.focus();
+    facts.textContent = "";
+    for (const [name, value] of FACTS(shot)) {
+      const dt = document.createElement("dt");
+      dt.textContent = name;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      facts.append(dt, dd);
+    }
+    words(shot.prompt);
+    const swap = () => {
+      video.src = "media/realism/" + id + ".mp4";
+      video.poster = "media/realism/" + id + ".jpg";
+      video.setAttribute("aria-label", shot.label);
+      video.play().catch(() => {});
+      stage.classList.remove("swapping");
+    };
+    if (reduceMotion) swap();
+    else { stage.classList.add("swapping"); setTimeout(swap, 220); }
+  }
+
+  picks.forEach((pick, i) => {
+    pick.addEventListener("click", () => { if (pick.getAttribute("aria-selected") !== "true") choose(pick, false); });
+    pick.addEventListener("keydown", (event) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+      if (step) { event.preventDefault(); choose(picks[(i + step + picks.length) % picks.length], true); }
+    });
+  });
+  sound.addEventListener("click", () => {
+    video.muted = !video.muted;
+    sound.setAttribute("aria-pressed", String(!video.muted));
+    if (!video.muted && video.paused) video.play().catch(() => {});
+  });
+
+  // First words without the reveal, so they are there before the visitor scrolls to them.
+  const first = SHOTS.harbor;
+  prompt.textContent = first.prompt;
+  for (const [name, value] of FACTS(first)) {
+    const dt = document.createElement("dt");
+    dt.textContent = name;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    facts.append(dt, dd);
+  }
+  whileVisible(video, () => !reduceMotion || !video.muted);
+})();
+
+// The launch film starts from the page's own button, with sound; the browser's controls come once it plays.
+(() => {
+  const film = document.getElementById("film-video");
+  const button = document.getElementById("film-play");
+  button.addEventListener("click", () => {
+    film.controls = true;
+    film.parentElement.classList.add("playing");
+    film.play().catch(() => {});
+    film.focus();
+  });
+})();
+
 // The cut drives the timeline and the shot pane, the way the editor's playhead does.
 (() => {
   const FPS = 24;
@@ -203,6 +347,7 @@
 
   function frameFromPointer(event) {
     const box = track.getBoundingClientRect();
+    if (!box.width) return frameNow();
     return ((event.clientX - box.left) / box.width) * TOTAL;
   }
   let dragging = false;
@@ -259,16 +404,17 @@
   });
 
   // The cut opens on the flame at its tallest, the poster's frame, so poster, playhead and panes agree
-  // before the video loads and whenever the browser refuses to play it on its own.
+  // before the video loads and whenever the browser refuses to play it on its own. It plays only while
+  // the editor is on screen, and stays paused once the visitor pauses it.
   const START = 36;
-  function begin() {
-    video.currentTime = (START + 0.5) / FPS;
-    if (!reduceMotion) video.play().catch(() => showPlaying());
-  }
+  let heldByVisitor = false;
+  play.addEventListener("click", () => { heldByVisitor = video.paused; });
+  function begin() { video.currentTime = (START + 0.5) / FPS; }
   if (video.readyState >= 1) begin();
   else video.addEventListener("loadedmetadata", begin, { once: true });
   showPlaying();
   show(START);
+  whileVisible(video, () => !reduceMotion && !heldByVisitor);
 
   /* The two ways to make the shot */
 
