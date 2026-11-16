@@ -1,5 +1,9 @@
 # Changelog
 
+## Windows fork compatibility
+
+- Selectively backported upstream 6d5ad8e: skip pinning read-only HyperFlow model mappings on ComfyUI 0.44+. Other upstream 0.10-0.12 changes are not included.
+
 What changed in each release of H3 Editor, newest first. Versions follow
 [semantic versioning](https://semver.org): while the pack is at 0.x, a new minor
 version can change how projects or the API behave, and the entry says so.
