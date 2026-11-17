@@ -67,7 +67,7 @@ test('generation preview discloses input and performs no submission before confi
   try {
     await f.node('providersOpen').emit('click');
     assert.equal(f.node('providerPreview').disabled, false);
-    assert.match(f.node('providerLimits').textContent, /20 submitted today/);
+    assert.match(f.node('providerLimits').textContent, /20 次今日提交/);
     await f.node('providerPreview').emit('click');
     assert.equal(f.node('providerReview').open, true);
     assert.equal(f.node('providerConfirm').disabled, true);
@@ -97,12 +97,12 @@ test('unknown quotes block generation and 1080P removes ten-second option', asyn
   try {
     await f.node('providersOpen').emit('click');
     f.node('providerSelect').value = 'minimax'; await f.node('providerSelect').emit('change');
-    assert.match(f.node('providerCost').textContent, /\$0.10 USD/);
+    assert.match(f.node('providerCost').textContent, /\$0.10 美元/);
     f.node('providerSeconds').value = '10'; await f.node('providerSeconds').emit('change');
     assert.equal(f.node('providerPreview').disabled, true);
     f.node('providerResolution').value = '1080P'; await f.node('providerResolution').emit('change');
     assert.deepEqual(f.node('providerSeconds').children.map(n => n.value), ['6']);
-    assert.match(f.node('providerCost').textContent, /\$0.20 USD/);
+    assert.match(f.node('providerCost').textContent, /\$0.20 美元/);
     assert.equal(f.node('providerPreview').disabled, false);
   } finally { f.restore(); }
 });

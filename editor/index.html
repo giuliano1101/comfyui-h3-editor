@@ -1,61 +1,61 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>H3 Editor</title>
+<title>H3 编辑器</title>
 <link rel="stylesheet" href="/h3take/editor-files/editor.css?v=__VERSION__">
 <link rel="stylesheet" href="/h3take/editor-files/providers.css?v=__VERSION__">
 </head>
 <body>
 <div class="app" id="app">
   <header class="bar">
-    <h1 class="sr">H3 Editor</h1>
-    <button id="project" class="project-button" type="button" aria-label="Project" title="Open another project" aria-haspopup="listbox" aria-expanded="false" popovertarget="projectList"><span id="projectShot" class="project-shot empty"></span><span id="projectName" class="project-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
-    <div id="projectList" class="menu project-list" popover aria-label="Projects">
+    <h1 class="sr">H3 编辑器</h1>
+    <button id="project" class="project-button" type="button" aria-label="项目" title="打开其他项目" aria-haspopup="listbox" aria-expanded="false" popovertarget="projectList"><span id="projectShot" class="project-shot empty"></span><span id="projectName" class="project-name"></span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+    <div id="projectList" class="menu project-list" popover aria-label="项目列表">
       <div class="project-find">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/></svg>
-        <input id="projectFind" type="text" role="combobox" aria-label="Find a project" aria-controls="projectRows" aria-expanded="true" aria-autocomplete="list" placeholder="Find a project" autocomplete="off" spellcheck="false">
+        <input id="projectFind" type="text" role="combobox" aria-label="搜索项目" aria-controls="projectRows" aria-expanded="true" aria-autocomplete="list" placeholder="搜索项目" autocomplete="off" spellcheck="false">
         <span id="projectCount" class="project-count"></span>
       </div>
-      <div id="projectRows" class="project-rows" role="listbox" aria-label="Projects, the open one first, then the last changed"></div>
+      <div id="projectRows" class="project-rows" role="listbox" aria-label="项目列表：当前项目优先，其余按更新时间排序"></div>
     </div>
-    <button id="projectMore" class="tool" aria-label="Rename, duplicate or delete this project" title="Rename, duplicate or delete this project" aria-haspopup="menu" popovertarget="projectMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></svg></button>
-    <div id="projectMenu" class="menu" popover role="menu" aria-label="This project">
-      <button id="projectRename" role="menuitem"><b>Rename</b><span>Give this project another name</span></button>
-      <button id="projectDuplicate" role="menuitem"><b>Duplicate</b><span>A copy with its clips, takes and pictures, to try another cut</span></button>
-      <button id="projectDownload" role="menuitem"><b>Download as zip</b><span>Take this project to another machine, with its takes</span></button>
-      <button id="projectOpen" role="menuitem"><b>Open a project zip</b><span>Carry on with a project downloaded here or elsewhere</span></button>
-      <button id="projectDelete" role="menuitem"><b>Delete</b><span>Move this project to the trash folder</span></button>
+    <button id="projectMore" class="tool" aria-label="重命名、复制或删除项目" title="重命名、复制或删除项目" aria-haspopup="menu" popovertarget="projectMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/></svg></button>
+    <div id="projectMenu" class="menu" popover role="menu" aria-label="当前项目">
+      <button id="projectRename" role="menuitem"><b>重命名</b><span>修改项目显示名称</span></button>
+      <button id="projectDuplicate" role="menuitem"><b>复制</b><span>复制镜头、素材版本和图片，尝试另一种剪辑</span></button>
+      <button id="projectDownload" role="menuitem"><b>下载项目压缩包</b><span>将项目及素材版本带到另一台电脑</span></button>
+      <button id="projectOpen" role="menuitem"><b>打开项目压缩包</b><span>继续编辑本机或其他电脑导出的项目</span></button>
+      <button id="projectDelete" role="menuitem"><b>删除</b><span>将项目移入回收站文件夹</span></button>
     </div>
-    <button id="newProject" class="quiet">New project</button>
-    <span class="release" title="The version of H3 Editor this is">H3 Editor __RELEASE__</span>
+    <button id="newProject" class="quiet">新建项目</button>
+    <span class="release" title="当前 H3 编辑器版本">H3 编辑器 __RELEASE__</span>
     <div class="spacer"></div>
     <button id="checks" class="checks-chip" aria-haspopup="true" popovertarget="checksPanel" hidden></button>
-    <div id="checksPanel" class="menu checks-panel" popover aria-label="Checks">
-      <div class="checks-head"><h2>Checks</h2><span id="checksSummary" class="checks-summary"></span></div>
+    <div id="checksPanel" class="menu checks-panel" popover aria-label="剪辑检查">
+      <div class="checks-head"><h2>剪辑检查</h2><span id="checksSummary" class="checks-summary"></span></div>
       <div id="checksList" class="checks-list"></div>
-      <p class="checks-foot">Measured from the pictures as clips render: cuts, takes that cut, fade or stop inside, soft clips, drift, VFX edges and your ratings.</p>
+      <p class="checks-foot">根据渲染画面检查衔接、内部切换、渐隐、定格、模糊、漂移及 VFX 边缘，并汇总评分。</p>
     </div>
-    <div id="contextMenu" class="menu context-menu" popover role="menu" aria-label="Actions" tabindex="-1"></div>
+    <div id="contextMenu" class="menu context-menu" popover role="menu" aria-label="操作" tabindex="-1"></div>
     <div id="queue" class="queue"></div>
-    <button id="providersOpen" class="quiet" aria-controls="providersPanel" aria-expanded="false">Providers &amp; agent</button>
-    <button id="renderAll" class="quiet">Render all drafts</button>
-    <button id="export" class="primary">Export</button>
-    <button id="shortcuts" class="tool tip-end" aria-label="Keyboard shortcuts" data-tip="Keyboard shortcuts (?)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10.5h.01M10.3 10.5h.01M13.7 10.5h.01M17 10.5h.01M8.5 14h7"/></svg></button>
-    <button id="close" class="tool tip-end" aria-label="Back to the graph" data-tip="Back to the graph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
+    <button id="providersOpen" class="quiet" aria-controls="providersPanel" aria-expanded="false">供应商与 Agent</button>
+    <button id="renderAll" class="quiet">渲染全部草稿</button>
+    <button id="export" class="primary">导出</button>
+    <button id="shortcuts" class="tool tip-end" aria-label="快捷键" data-tip="快捷键（?）"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10.5h.01M10.3 10.5h.01M13.7 10.5h.01M17 10.5h.01M8.5 14h7"/></svg></button>
+    <button id="close" class="tool tip-end" aria-label="返回工作流" data-tip="返回工作流"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
   </header>
 
   <main class="work">
-    <aside class="bin" aria-label="Clips and cast">
-      <div class="panel-head"><h2>Clips <span id="clipCount" class="count"></span></h2><div class="head-tools"><button id="newBin" class="tool" aria-label="New bin" title="New bin, a folder for clips"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.2a1.7 1.7 0 0 1 1.7-1.7h3.9l2 2.1h7.7a1.7 1.7 0 0 1 1.7 1.7v7.5a1.7 1.7 0 0 1-1.7 1.7H5.2a1.7 1.7 0 0 1-1.7-1.7z"/><path d="M12 10.6v5M9.5 13.1h5"/></svg></button><button id="importClip" class="tool" aria-label="Import" title="Import a video or a picture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M4.5 15.5v2.3a1.7 1.7 0 0 0 1.7 1.7h11.6a1.7 1.7 0 0 0 1.7-1.7v-2.3"/></svg></button><button id="newClip" class="quiet new-clip" aria-label="New clip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>New clip</span></button></div></div>
+    <aside class="bin" aria-label="镜头与角色">
+      <div class="panel-head"><h2>镜头 <span id="clipCount" class="count"></span></h2><div class="head-tools"><button id="newBin" class="tool" aria-label="新建素材箱" title="新建素材箱，用于归档镜头"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.2a1.7 1.7 0 0 1 1.7-1.7h3.9l2 2.1h7.7a1.7 1.7 0 0 1 1.7 1.7v7.5a1.7 1.7 0 0 1-1.7 1.7H5.2a1.7 1.7 0 0 1-1.7-1.7z"/><path d="M12 10.6v5M9.5 13.1h5"/></svg></button><button id="importClip" class="tool" aria-label="导入" title="导入视频或图片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10.5M8 11l4 4 4-4"/><path d="M4.5 15.5v2.3a1.7 1.7 0 0 0 1.7 1.7h11.6a1.7 1.7 0 0 0 1.7-1.7v-2.3"/></svg></button><button id="newClip" class="quiet new-clip" aria-label="新建镜头"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg><span>新建镜头</span></button></div></div>
       <div id="clips" class="clips"></div>
-      <div class="panel-head cast-head"><h2>Cast</h2><div class="head-tools"><button id="castAdd" class="quiet menu-button" aria-haspopup="menu" popovertarget="castMenu">Add<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button></div></div>
-      <div id="castMenu" class="menu" popover role="menu" aria-label="Add to the cast">
-        <button id="addCast" role="menuitem"><b>Add reference</b><span>A picture of a person, a product or a place to keep the same in every clip</span></button>
-        <button id="addVoice" role="menuitem"><b>Add voice</b><span>A voice with no picture, such as a narrator</span></button>
-        <button id="addFromCatalog" role="menuitem"><b>From the catalog</b><span>Someone you saved in another project, with their pictures and voice</span></button>
-        <button id="addRefmod" role="menuitem" hidden><b>Add RefMod</b><span>A cast member from a RefMod, a reference saved with the ComfyUI-MiniMaxH3Mod pack</span></button>
+      <div class="panel-head cast-head"><h2>角色</h2><div class="head-tools"><button id="castAdd" class="quiet menu-button" aria-haspopup="menu" popovertarget="castMenu">添加<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button></div></div>
+      <div id="castMenu" class="menu" popover role="menu" aria-label="添加角色">
+        <button id="addCast" role="menuitem"><b>添加参考图</b><span>添加人物、产品或场景参考图，保持各镜头一致</span></button>
+        <button id="addVoice" role="menuitem"><b>添加声音</b><span>添加无需画面参考的声音，例如旁白</span></button>
+        <button id="addFromCatalog" role="menuitem"><b>从角色库导入</b><span>导入其他项目保存的角色及其参考图、声音</span></button>
+        <button id="addRefmod" role="menuitem" hidden><b>添加 RefMod</b><span>从 ComfyUI-MiniMaxH3Mod 插件保存的 RefMod 添加角色</span></button>
       </div>
       <div id="cast" class="cast"></div>
       <input id="castFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -66,83 +66,83 @@
       <input id="soundFile" type="file" accept="audio/*" hidden>
     </aside>
 
-    <div class="splitter-v" id="splitBin" role="separator" aria-orientation="vertical" aria-label="Resize the clips panel" title="Drag to resize. Double-click to reset." tabindex="0"></div>
-    <section class="stage" aria-label="Viewer">
+    <div class="splitter-v" id="splitBin" role="separator" aria-orientation="vertical" aria-label="调整镜头面板宽度" title="拖动调整大小，双击恢复默认。" tabindex="0"></div>
+    <section class="stage" aria-label="预览器">
       <div id="screen" class="screen">
         <video id="videoA" playsinline></video>
         <video id="videoB" playsinline></video>
         <canvas id="vfx" hidden></canvas>
-        <img id="preview" alt="Live render preview" hidden>
+        <img id="preview" alt="实时渲染预览" hidden>
         <video id="motion" playsinline loop hidden></video>
         <div id="slate" class="slate"></div>
         <div id="live" class="live" hidden></div>
-        <button id="liveSound" class="tool live-sound" hidden aria-pressed="false" aria-label="Sound of the live preview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+        <button id="liveSound" class="tool live-sound" hidden aria-pressed="false" aria-label="实时预览声音"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z"/><path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
         <canvas id="noteLayer" class="note-layer" aria-hidden="true"></canvas>
         <div id="noteTag" class="note-tag" hidden></div>
-        <div id="noteBox" class="note-box" hidden role="dialog" aria-label="Write a note on this frame">
+        <div id="noteBox" class="note-box" hidden role="dialog" aria-label="标注当前帧">
           <p id="noteWhere" class="note-head"></p>
-          <div id="noteTools" class="note-tools" role="group" aria-label="Point at the picture with">
-            <button type="button" class="quiet" data-tool="pin" aria-pressed="false">Pin</button><button type="button" class="quiet" data-tool="rect" aria-pressed="true">Box</button><button type="button" class="quiet" data-tool="stroke" aria-pressed="false">Draw</button><button type="button" id="noteClear" class="quiet">Clear</button>
+          <div id="noteTools" class="note-tools" role="group" aria-label="标注方式">
+            <button type="button" class="quiet" data-tool="pin" aria-pressed="false">标记点</button><button type="button" class="quiet" data-tool="rect" aria-pressed="true">画框</button><button type="button" class="quiet" data-tool="stroke" aria-pressed="false">绘制</button><button type="button" id="noteClear" class="quiet">清除</button>
           </div>
-          <textarea id="noteText" rows="3" placeholder="What should change here?" aria-label="Note"></textarea>
+          <textarea id="noteText" rows="3" placeholder="这里需要如何修改？" aria-label="标注"></textarea>
           <p id="noteHint" class="hint"></p>
-          <div class="note-foot"><button type="button" id="noteCancel" class="quiet">Cancel</button><button type="button" id="noteSave" class="primary">Save note</button></div>
+          <div class="note-foot"><button type="button" id="noteCancel" class="quiet">取消</button><button type="button" id="noteSave" class="primary">保存标注</button></div>
         </div>
-        <div id="sourceTag" class="source-tag" hidden><span id="sourceName"></span><button id="toTimeline" class="quiet" title="Show the cut again. Clicking the timeline does too">Back to timeline</button></div>
+        <div id="sourceTag" class="source-tag" hidden><span id="sourceName"></span><button id="toTimeline" class="quiet" title="返回剪辑预览，点击时间线也可返回">返回时间线</button></div>
       </div>
       <div class="transport">
-        <button id="toStart" class="icon" aria-label="Go to start" title="Go to start (Home)">
+        <button id="toStart" class="icon" aria-label="跳到开头" title="跳到开头（Home）">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 5.5v13"/><path class="solid" d="M18 6.2v11.6L9.4 12z"/></svg>
         </button>
-        <button id="back" class="icon" aria-label="One frame back" title="One frame back (Left)">
+        <button id="back" class="icon" aria-label="上一帧" title="上一帧（左方向键）">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg>
         </button>
-        <button id="play" class="icon play" aria-label="Play" title="Play or pause (Space)">
+        <button id="play" class="icon play" aria-label="播放" title="播放或暂停（空格）">
           <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path class="solid" d="M8.5 5.6v12.8L18.6 12z"/></svg>
           <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><rect class="solid" x="7" y="5.5" width="3.6" height="13" rx="1"/><rect class="solid" x="13.4" y="5.5" width="3.6" height="13" rx="1"/></svg>
         </button>
-        <button id="forward" class="icon" aria-label="One frame forward" title="One frame forward (Right)">
+        <button id="forward" class="icon" aria-label="下一帧" title="下一帧（右方向键）">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5L15 12l-5.5 5.5"/></svg>
         </button>
-        <span class="clock" title="Minutes, seconds and frames"><span id="time" class="time">00:00:00</span><span id="total" class="total"></span></span>
-        <button id="addNote" class="quiet note-button" title="Write a note on this frame (N)">Note</button>
+        <span class="clock" title="分钟、秒和帧"><span id="time" class="time">00:00:00</span><span id="total" class="total"></span></span>
+        <button id="addNote" class="quiet note-button" title="标注当前帧（N）">标注</button>
       </div>
     </section>
 
-    <div class="splitter-v" id="splitInspector" role="separator" aria-orientation="vertical" aria-label="Resize the inspector" title="Drag to resize. Double-click to reset." tabindex="0"></div>
-    <aside class="inspector" id="inspector" aria-label="Inspector">
-      <div class="insp-tabs" id="inspTabs" role="tablist" aria-label="Inspector sections"></div>
+    <div class="splitter-v" id="splitInspector" role="separator" aria-orientation="vertical" aria-label="调整属性面板宽度" title="拖动调整大小，双击恢复默认。" tabindex="0"></div>
+    <aside class="inspector" id="inspector" aria-label="属性面板">
+      <div class="insp-tabs" id="inspTabs" role="tablist" aria-label="属性分类"></div>
       <div class="insp-body" id="inspBody" role="tabpanel"></div>
     </aside>
   </main>
 
-  <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the timeline" tabindex="0"></div>
+  <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="调整时间线高度" tabindex="0"></div>
 
-  <section class="timeline" id="timeline" aria-label="Timeline">
+  <section class="timeline" id="timeline" aria-label="时间线">
     <div class="tl-tools">
-      <div class="group" role="group" aria-label="Edit">
-        <button id="split" class="tool" aria-label="Split" data-tip="Split at the playhead (S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v17"/><rect x="3.5" y="7.5" width="5" height="9" rx="1.5"/><rect x="15.5" y="7.5" width="5" height="9" rx="1.5"/></svg></button>
-        <button id="remove" class="tool" aria-label="Remove" data-tip="Remove from the timeline (Delete)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6.5" width="16" height="11" rx="1.5"/><path d="M10 10l4 4M14 10l-4 4"/></svg></button>
-        <button id="ripple" class="tool" aria-label="Ripple delete" data-tip="Remove and close the space (Shift+Delete)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6.5" width="9.5" height="11" rx="1.5"/><path d="M6.6 10.3l3.4 3.4M10 10.3l-3.4 3.4"/><path d="M21 12h-5M18.2 9.6L15.8 12l2.4 2.4"/></svg></button>
-        <button id="closeGap" class="tool" aria-label="Close gap" data-tip="Close the selected gap (Delete)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5v11M20 6.5v11"/><path d="M6.5 12H11M9 9.8l2.2 2.2L9 14.2"/><path d="M17.5 12H13M15 9.8L12.8 12l2.2 2.2"/></svg></button>
+      <div class="group" role="group" aria-label="编辑">
+        <button id="split" class="tool" aria-label="分割" data-tip="在播放头处分割（S）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v17"/><rect x="3.5" y="7.5" width="5" height="9" rx="1.5"/><rect x="15.5" y="7.5" width="5" height="9" rx="1.5"/></svg></button>
+        <button id="remove" class="tool" aria-label="移除" data-tip="从时间线移除（Delete）"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6.5" width="16" height="11" rx="1.5"/><path d="M10 10l4 4M14 10l-4 4"/></svg></button>
+        <button id="ripple" class="tool" aria-label="波纹删除" data-tip="移除并闭合空隙（Shift+Delete）"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6.5" width="9.5" height="11" rx="1.5"/><path d="M6.6 10.3l3.4 3.4M10 10.3l-3.4 3.4"/><path d="M21 12h-5M18.2 9.6L15.8 12l2.4 2.4"/></svg></button>
+        <button id="closeGap" class="tool" aria-label="闭合空隙" data-tip="闭合选中空隙（Delete）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5v11M20 6.5v11"/><path d="M6.5 12H11M9 9.8l2.2 2.2L9 14.2"/><path d="M17.5 12H13M15 9.8L12.8 12l2.2 2.2"/></svg></button>
       </div>
-      <button id="generate" class="quiet menu-button" aria-haspopup="menu" popovertarget="generateMenu">Generate<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
-      <div id="generateMenu" class="menu" popover role="menu" aria-label="Generate from the selected clip">
-        <button id="extendBack" role="menuitem"><b>Extend back</b><span>Generate what happens before the selected clip</span></button>
-        <button id="extendForward" role="menuitem"><b>Extend forward</b><span>Generate what happens after the selected clip</span></button>
-        <button id="bridge" role="menuitem"><b>Bridge to next</b><span>Generate what leads from the selected clip into the start of the next one</span></button>
-        <button id="bridgeHold" role="menuitem"><b>Bridge into its movement</b><span>The same, holding more of the next clip's start: for a clip that starts in mid-movement</span></button>
-        <button id="merge" role="menuitem"><b>Merge with next</b><span>Replace the join with a generated crossing, keeping the scene's length</span></button>
+      <button id="generate" class="quiet menu-button" aria-haspopup="menu" popovertarget="generateMenu">生成<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+      <div id="generateMenu" class="menu" popover role="menu" aria-label="基于选中片段生成">
+        <button id="extendBack" role="menuitem"><b>向前延伸</b><span>生成选中片段之前的内容</span></button>
+        <button id="extendForward" role="menuitem"><b>向后延伸</b><span>生成选中片段之后的内容</span></button>
+        <button id="bridge" role="menuitem"><b>桥接下一片段</b><span>生成连接当前片段与下一片段开头的桥接镜头</span></button>
+        <button id="bridgeHold" role="menuitem"><b>桥接下一段运动</b><span>保留下一片段更多起始帧，适合从运动中开始的镜头</span></button>
+        <button id="merge" role="menuitem"><b>与下一片段融合</b><span>用生成的过渡替换衔接，保持场景总时长</span></button>
       </div>
-      <button id="addSound" class="quiet" title="Lay music, narration or another sound under the cut, on a lane of its own">Add sound</button>
-      <button id="addEffect" class="quiet" title="Add a clip drawn by code on the VFX lane, over the picture at the playhead">Add VFX</button>
-      <button id="rate" class="quiet" title="Rate a range of the cut against a rubric with Gemini. Mark a range with I and O, or Shift-drag on the ruler">Rate</button>
+      <button id="addSound" class="quiet" title="在独立音轨上添加音乐、旁白或其他声音">添加音频</button>
+      <button id="addEffect" class="quiet" title="在播放头位置的 VFX 轨道添加代码绘制片段">添加 VFX</button>
+      <button id="rate" class="quiet" title="使用 Gemini 按评分标准评价选中范围。可用 I/O 或按住 Shift 拖动标尺来标记范围">评分</button>
       <div class="spacer"></div>
-      <button id="fit" class="quiet" title="Show the whole scene (\)">Fit</button>
-      <label class="zoom">Zoom <input id="zoom" type="range" min="0.1" max="12" step="0.1" value="3"></label>
+      <button id="fit" class="quiet" title="显示完整场景（\）">适配视图</button>
+      <label class="zoom">缩放 <input id="zoom" type="range" min="0.1" max="12" step="0.1" value="3"></label>
     </div>
     <div class="tl-body" id="tlBody">
-      <div class="tl-heads"><div class="tl-head ruler-head"></div><div class="tl-head" title="Clips drawn by code, over the picture below them">VFX</div><div class="tl-head">Picture</div><div class="tl-head">Sound</div></div>
+      <div class="tl-heads"><div class="tl-head ruler-head"></div><div class="tl-head" title="在底层画面上叠加的代码绘制片段">VFX</div><div class="tl-head">画面</div><div class="tl-head">音频</div></div>
       <div class="tl-scroll" id="tlScroll">
         <div class="tl-content" id="tlContent">
           <div class="ruler" id="ruler"></div>
@@ -158,51 +158,51 @@
 </div>
 
 <dialog id="models" class="keys models" aria-labelledby="modelsTitle">
-  <div class="keys-head"><h2 id="modelsTitle">Models</h2><button id="modelsClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="modelsTitle">模型管理</h2><button id="modelsClose" class="quiet">关闭</button></div>
   <div id="modelsBody" class="models-body"></div>
   <div id="modelsFoot" class="exporter-foot"></div>
 </dialog>
 <dialog id="panelDialog" class="keys panel-dialog" aria-labelledby="panelDialogTitle">
-  <div class="keys-head"><h2 id="panelDialogTitle"></h2><button id="panelDialogClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="panelDialogTitle"></h2><button id="panelDialogClose" class="quiet">关闭</button></div>
   <div id="panelDialogBody" class="panel-dialog-body"></div>
 </dialog>
 <dialog id="creator" class="keys exporter" aria-labelledby="creatorTitle">
   <form id="creatorForm" method="dialog">
-    <div class="keys-head"><h2 id="creatorTitle">New project</h2><button id="creatorClose" class="quiet" type="button">Close</button></div>
+    <div class="keys-head"><h2 id="creatorTitle">新建项目</h2><button id="creatorClose" class="quiet" type="button">关闭</button></div>
     <div class="exporter-body">
-      <label class="field"><span>Name</span><input id="creatorName" type="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="Morning teaser"></label>
-      <label class="choice"><span>Format</span><select id="creatorFormat">
-        <option value="16:9" selected>Wide, 16:9</option>
-        <option value="9:16">Vertical, 9:16</option>
-        <option value="1:1">Square, 1:1</option>
+      <label class="field"><span>名称</span><input id="creatorName" type="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="清晨预告片"></label>
+      <label class="choice"><span>画幅</span><select id="creatorFormat">
+        <option value="16:9" selected>横屏 16:9</option>
+        <option value="9:16">竖屏 9:16</option>
+        <option value="1:1">方形 1:1</option>
       </select></label>
       <p id="creatorHint" class="hint" aria-live="polite"></p>
     </div>
-    <div class="exporter-foot"><span class="spacer"></span><button id="creatorGo" class="primary" type="submit">Create project</button></div>
+    <div class="exporter-foot"><span class="spacer"></span><button id="creatorGo" class="primary" type="submit">创建项目</button></div>
   </form>
 </dialog>
 <dialog id="asker" class="keys exporter" aria-labelledby="askerTitle">
   <form id="askerForm" method="dialog">
-    <div class="keys-head"><h2 id="askerTitle"></h2><button id="askerClose" class="quiet" type="button">Cancel</button></div>
+    <div class="keys-head"><h2 id="askerTitle"></h2><button id="askerClose" class="quiet" type="button">取消</button></div>
     <div class="exporter-body">
-      <label class="field" id="askerField"><span id="askerLabel">Name</span><input id="askerInput" type="text" autocomplete="off" spellcheck="false" maxlength="64"></label>
+      <label class="field" id="askerField"><span id="askerLabel">名称</span><input id="askerInput" type="text" autocomplete="off" spellcheck="false" maxlength="64"></label>
       <p id="askerNote" class="hint"></p>
     </div>
     <div class="exporter-foot"><span class="spacer"></span><button id="askerGo" class="primary" type="submit"></button></div>
   </form>
 </dialog>
 <dialog id="packer" class="keys exporter" aria-labelledby="packerTitle">
-  <div class="keys-head"><h2 id="packerTitle">Download the project</h2><button id="packerClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="packerTitle">下载项目</h2><button id="packerClose" class="quiet">关闭</button></div>
   <div class="exporter-body">
-    <p class="packer-lead">One zip to open this project again with <b>Open a project zip</b>, here or on another machine.</p>
-    <div id="packerLevels" class="packer-levels" role="radiogroup" aria-label="What the zip holds"></div>
+    <p class="packer-lead">打包为一个压缩包，可使用 <b>打开项目压缩包</b>，在本机或其他电脑继续编辑。</p>
+    <div id="packerLevels" class="packer-levels" role="radiogroup" aria-label="压缩包内容"></div>
     <p id="packerResult" class="hint" aria-live="polite"></p>
   </div>
-  <div class="exporter-foot"><span class="spacer"></span><button id="packerGo" class="primary">Download</button></div>
+  <div class="exporter-foot"><span class="spacer"></span><button id="packerGo" class="primary">下载</button></div>
 </dialog>
 
 <dialog id="opener" class="keys exporter" aria-labelledby="openerTitle">
-  <div class="keys-head"><h2 id="openerTitle">Opening the project</h2><button id="openerCancel" class="quiet">Cancel</button></div>
+  <div class="keys-head"><h2 id="openerTitle">正在打开项目</h2><button id="openerCancel" class="quiet">取消</button></div>
   <div class="exporter-body">
     <p id="openerFile" class="exporter-summary"></p>
     <div class="opener-bar" role="progressbar" aria-labelledby="openerTitle" aria-valuemin="0" aria-valuemax="100"><i id="openerFill"></i></div>
@@ -211,47 +211,47 @@
 </dialog>
 
 <dialog id="exporter" class="keys exporter" aria-labelledby="exporterTitle">
-  <div class="keys-head"><h2 id="exporterTitle">Export the cut</h2><button id="exporterClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="exporterTitle">导出剪辑</h2><button id="exporterClose" class="quiet">关闭</button></div>
   <div class="exporter-body">
     <p id="exporterSummary" class="exporter-summary"></p>
     <ul id="exporterNotes" class="exporter-notes"></ul>
-    <label class="field"><span>File name</span><input id="exporterName" type="text" autocomplete="off" spellcheck="false"></label>
+    <label class="field"><span>文件名</span><input id="exporterName" type="text" autocomplete="off" spellcheck="false"></label>
     <div class="halves">
-      <label class="choice"><span>Size</span><select id="exporterScale"></select></label>
-      <label class="choice"><span>Quality</span><select id="exporterQuality">
-        <option value="best">Best, the largest file</option>
-        <option value="high" selected>High</option>
-        <option value="small">Smaller file</option>
+      <label class="choice"><span>尺寸</span><select id="exporterScale"></select></label>
+      <label class="choice"><span>画质</span><select id="exporterQuality">
+        <option value="best">最佳画质，文件最大</option>
+        <option value="high" selected>高画质</option>
+        <option value="small">较小文件</option>
       </select></label>
     </div>
-    <label class="check"><input id="exporterDownload" type="checkbox" checked><span>Download it to this computer when it is done</span></label>
+    <label class="check"><input id="exporterDownload" type="checkbox" checked><span>完成后下载到此电脑</span></label>
     <p id="exporterResult" class="hint" aria-live="polite"></p>
   </div>
-  <div class="exporter-foot"><a id="exporterLink" class="quiet button" hidden download>Download again</a><span class="spacer"></span><button id="exporterGo" class="primary">Export</button></div>
+  <div class="exporter-foot"><a id="exporterLink" class="quiet button" hidden download>再次下载</a><span class="spacer"></span><button id="exporterGo" class="primary">导出</button></div>
 </dialog>
 <dialog id="rater" class="keys exporter rater" aria-labelledby="raterTitle">
-  <div class="keys-head"><h2 id="raterTitle">Rate a range</h2><button id="raterClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="raterTitle">对选中范围评分</h2><button id="raterClose" class="quiet">关闭</button></div>
   <div class="exporter-body">
     <p id="raterSummary" class="exporter-summary"></p>
-    <p class="hint">This sends that part of the cut, at half size, to Google's Gemini with your own API key. It is deleted there once it is rated. Each criterion comes back as a level, with how sure the model is.</p>
+    <p class="hint">使用你配置的 API 密钥，将选中剪辑以一半尺寸发送至 Google Gemini。评分完成后从服务端删除；返回各项等级及模型置信度。</p>
     <div id="raterKey" class="rater-key"></div>
     <div id="raterRows" class="rater-rows" aria-live="polite"></div>
     <p id="raterResult" class="hint" aria-live="polite"></p>
     <div id="raterPast" class="rater-past"></div>
   </div>
-  <div class="exporter-foot"><span class="spacer"></span><button id="raterGo" class="primary">Rate</button></div>
+  <div class="exporter-foot"><span class="spacer"></span><button id="raterGo" class="primary">评分</button></div>
 </dialog>
 <dialog id="writerSetup" class="keys exporter" aria-labelledby="writerSetupTitle">
-  <div class="keys-head"><h2 id="writerSetupTitle">Writing with a language model</h2><button id="writerSetupClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="writerSetupTitle">使用语言模型写作</h2><button id="writerSetupClose" class="quiet">关闭</button></div>
   <div class="exporter-body">
-    <p class="hint">Rewrite and Write shots send to the model you choose: the project's look and language, the cast's names, descriptions and pictures, the clips' text, and any picture you add. No sound. A model run by this ComfyUI keeps it on this machine; any other provider is called from this browser. These settings, any key included, stay in this browser and are never saved in a project.</p>
+    <p class="hint">重写与编写分镜会向选定模型发送项目风格、对白语言、角色名称、描述、参考图、镜头文字及你添加的图片，不发送音频。ComfyUI 本地模型在本机处理，其他服务由浏览器调用。此处设置及密钥仅保存在当前浏览器，不写入项目。</p>
     <div id="writerSetupFields"></div>
     <p id="writerSetupResult" class="hint" aria-live="polite"></p>
   </div>
-  <div class="exporter-foot"><button id="writerSetupTest" class="quiet">Test</button><span class="spacer"></span><button id="writerSetupSave" class="primary">Save</button></div>
+  <div class="exporter-foot"><button id="writerSetupTest" class="quiet">测试</button><span class="spacer"></span><button id="writerSetupSave" class="primary">保存</button></div>
 </dialog>
 <dialog id="writer" class="keys exporter writer" aria-labelledby="writerTitle">
-  <div class="keys-head"><h2 id="writerTitle"></h2><button id="writerClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="writerTitle"></h2><button id="writerClose" class="quiet">关闭</button></div>
   <div class="exporter-body">
     <div id="writerAsk"></div>
     <p id="writerResult" class="hint" aria-live="polite"></p>
@@ -260,68 +260,68 @@
   <div class="exporter-foot"><button id="writerGo" class="quiet"></button><span class="spacer"></span><button id="writerUse" class="primary" disabled></button></div>
 </dialog>
 <dialog id="picker" class="keys picker" aria-labelledby="pickerTitle">
-  <div class="keys-head"><h2 id="pickerTitle">Add a LoRA</h2><button id="pickerClose" class="quiet">Close</button></div>
-  <div class="picker-search"><input id="pickerSearch" type="search" autocomplete="off" spellcheck="false" aria-label="Search"><span id="pickerCount" class="count"></span></div>
+  <div class="keys-head"><h2 id="pickerTitle">添加 LoRA</h2><button id="pickerClose" class="quiet">关闭</button></div>
+  <div class="picker-search"><input id="pickerSearch" type="search" autocomplete="off" spellcheck="false" aria-label="搜索"><span id="pickerCount" class="count"></span></div>
   <div id="pickerList" class="picker-list" role="listbox" aria-labelledby="pickerTitle"></div>
   <p id="pickerHint" class="hint"></p>
 </dialog>
 <dialog id="keys" class="keys" aria-labelledby="keysTitle">
-  <div class="keys-head"><h2 id="keysTitle">Keyboard shortcuts</h2><button id="keysClose" class="quiet">Close</button></div>
+  <div class="keys-head"><h2 id="keysTitle">快捷键</h2><button id="keysClose" class="quiet">关闭</button></div>
   <dl>
-    <dt>Space</dt><dd>Play or pause</dd>
-    <dt>J, K, L</dt><dd>Back one second, pause, play</dd>
-    <dt>Left, Right</dt><dd>One frame. Hold Shift for one second</dd>
-    <dt>Up, Down</dt><dd>Previous or next edit</dd>
-    <dt>Home, End</dt><dd>Start or end of the scene</dd>
-    <dt>S</dt><dd>Split at the playhead</dd>
-    <dt>N</dt><dd>Write a note on the frame in the viewer: pin, box or draw on it. With a range marked by I and O, the note covers the range</dd>
-    <dt>Esc</dt><dd>Select nothing</dd>
-    <dt>Tab, Enter</dt><dd>Reach a clip or a sound on the timeline, and select it</dd>
-    <dt>Delete</dt><dd>On the timeline, remove a clip from it, or close a selected gap. In the Clips panel, delete the clip or bin</dd>
-    <dt>Shift+Delete</dt><dd>Remove a clip from the timeline and close the space</dd>
-    <dt>I and O</dt><dd>Mark the start and the end of a range at the playhead, for Rate. Shift-drag on the ruler marks one too; Esc clears it</dd>
-    <dt>[ and ]</dt><dd>Flip between takes of the selected clip</dd>
-    <dt>, and .</dt><dd>Slip the selected clip: show an earlier or a later part of its take, without moving it. With Shift, half a second</dd>
-    <dt>Alt+drag</dt><dd>Slip a clip on the timeline</dd>
-    <dt>Ctrl+wheel</dt><dd>Zoom the timeline at the pointer</dd>
-    <dt>\</dt><dd>Fit the whole scene</dd>
-    <dt>Ctrl+Z, Ctrl+Shift+Z</dt><dd>Undo, redo</dd>
-    <dt>?</dt><dd>Show this list</dd>
+    <dt>Space</dt><dd>播放或暂停</dd>
+    <dt>J, K, L</dt><dd>后退一秒、暂停、播放</dd>
+    <dt>Left, Right</dt><dd>前后移动一帧，按住 Shift 则移动一秒</dd>
+    <dt>Up, Down</dt><dd>上一个或下一个剪辑点</dd>
+    <dt>Home, End</dt><dd>场景开头或结尾</dd>
+    <dt>S</dt><dd>在播放头处分割</dd>
+    <dt>N</dt><dd>标注预览器当前帧，可打点、画框或绘制。已用 I/O 标记范围时，标注覆盖该范围</dd>
+    <dt>Esc</dt><dd>取消选择</dd>
+    <dt>Tab, Enter</dt><dd>定位并选择时间线上的片段或音频</dd>
+    <dt>Delete</dt><dd>在时间线上移除片段或闭合选中空隙；在镜头面板中删除镜头或素材箱</dd>
+    <dt>Shift+Delete</dt><dd>从时间线移除片段，并闭合空隙</dd>
+    <dt>I and O</dt><dd>在播放头处标记评分范围的起止点；也可按住 Shift 拖动标尺。Esc 清除范围</dd>
+    <dt>[ and ]</dt><dd>切换选中镜头的素材版本</dd>
+    <dt>, and .</dt><dd>滑移选中片段，使用素材的更早或更晚部分，但不改变位置。按住 Shift 每次移动半秒</dd>
+    <dt>Alt+drag</dt><dd>滑移时间线上的片段</dd>
+    <dt>Ctrl+wheel</dt><dd>以鼠标位置缩放时间线</dd>
+    <dt>\</dt><dd>适配完整场景</dd>
+    <dt>Ctrl+Z, Ctrl+Shift+Z</dt><dd>撤销、重做</dd>
+    <dt>?</dt><dd>显示此快捷键列表</dd>
   </dl>
 </dialog>
 <div id="toast" class="toasts"></div>
 <aside id="providersPanel" class="providers-panel" aria-labelledby="providersTitle" hidden>
-  <div class="providers-head"><h2 id="providersTitle">Providers &amp; agent</h2><button id="providersClose" class="quiet">Close</button></div>
+  <div class="providers-head"><h2 id="providersTitle">供应商与 Agent</h2><button id="providersClose" class="quiet">关闭</button></div>
   <div class="providers-body">
-    <p class="hint">Local H3 continues through Render draft and Render final. External results become a new take only when you import them.</p>
+    <p class="hint">本地 H3 继续使用“渲染草稿”和“渲染成片”。外部生成结果只有在你选择导入后，才会成为新的素材版本。</p>
     <p id="providerError" role="alert" hidden></p>
     <section aria-labelledby="providerGenerateTitle">
-      <h3 id="providerGenerateTitle">Generate for the selected clip</h3>
+      <h3 id="providerGenerateTitle">为当前镜头生成</h3>
       <p id="providerClip" class="hint"></p>
-      <label class="provider-field">Provider<select id="providerSelect"></select></label>
+      <label class="provider-field">服务商<select id="providerSelect"></select></label>
       <p id="providerStatus" class="hint"></p>
-      <div class="provider-fields"><label class="provider-field">Model<select id="providerModel"></select></label><label class="provider-field">Resolution<select id="providerResolution"></select></label><label class="provider-field">Seconds<select id="providerSeconds"></select></label></div>
-      <label class="provider-field">What happens<textarea id="providerPrompt" rows="4" maxlength="2000"></textarea></label>
+      <div class="provider-fields"><label class="provider-field">模型<select id="providerModel"></select></label><label class="provider-field">分辨率<select id="providerResolution"></select></label><label class="provider-field">时长（秒）<select id="providerSeconds"></select></label></div>
+      <label class="provider-field">画面描述<textarea id="providerPrompt" rows="4" maxlength="2000"></textarea></label>
       <p id="providerCost" class="hint"></p>
       <p id="providerLimits" class="hint"></p>
-      <button id="providerPreview" class="quiet">Review generation</button>
+      <button id="providerPreview" class="quiet">确认生成任务</button>
     </section>
-    <section aria-labelledby="providerJobsTitle"><div class="providers-head"><h3 id="providerJobsTitle">Jobs in this project</h3><button id="providerRefresh" class="quiet">Refresh</button></div><div id="providerJobs" aria-live="polite"></div></section>
-    <section aria-labelledby="providerApprovalTitle"><h3 id="providerApprovalTitle">Agent requests</h3><p class="hint">The agent starts read-only. With editing enabled on the server, each change waits here for your approval and expires after five minutes.</p><div id="providerApprovals"></div></section>
-    <section aria-labelledby="providerVoiceTitle"><h3 id="providerVoiceTitle">Voice notes</h3>
-      <p class="hint">Optional local recording, up to 30 seconds. Audio stays in this tab and is discarded when this panel closes. No audio is uploaded. Voice chat and automatic transcription are unavailable.</p>
-      <div class="provider-actions"><button id="voiceRecord" class="quiet">Allow microphone &amp; record</button><button id="voiceStop" class="quiet" disabled>Stop</button><button id="voiceDiscard" class="quiet" disabled>Discard</button></div>
-      <p id="voiceStatus" role="status">Microphone off.</p><audio id="voicePlayback" controls hidden></audio>
-      <label class="provider-field">Shot text (type or paste a transcript)<textarea id="voiceTranscript" rows="3" maxlength="2000"></textarea></label>
-      <button id="voicePreview" class="quiet">Preview as a new clip</button>
+    <section aria-labelledby="providerJobsTitle"><div class="providers-head"><h3 id="providerJobsTitle">本项目任务</h3><button id="providerRefresh" class="quiet">刷新</button></div><div id="providerJobs" aria-live="polite"></div></section>
+    <section aria-labelledby="providerApprovalTitle"><h3 id="providerApprovalTitle">Agent 请求</h3><p class="hint">Agent 默认只读。服务器允许编辑后，每次修改仍需在此批准，请求在五分钟后过期。</p><div id="providerApprovals"></div></section>
+    <section aria-labelledby="providerVoiceTitle"><h3 id="providerVoiceTitle">语音笔记</h3>
+      <p class="hint">可选的本地录音，最长 30 秒。录音仅保留在当前标签页，关闭此面板即丢弃，不会上传。语音聊天和自动转写尚不可用。</p>
+      <div class="provider-actions"><button id="voiceRecord" class="quiet">授权麦克风并录音</button><button id="voiceStop" class="quiet" disabled>停止</button><button id="voiceDiscard" class="quiet" disabled>丢弃</button></div>
+      <p id="voiceStatus" role="status">麦克风已关闭。</p><audio id="voicePlayback" controls hidden></audio>
+      <label class="provider-field">镜头文字（输入或粘贴转写稿）<textarea id="voiceTranscript" rows="3" maxlength="2000"></textarea></label>
+      <button id="voicePreview" class="quiet">预览为新镜头</button>
     </section>
   </div>
 </aside>
 <dialog id="providerReview" class="keys provider-review" aria-labelledby="providerReviewTitle">
-  <div class="keys-head"><h2 id="providerReviewTitle">Review request</h2><button id="providerReviewClose" class="quiet">Back</button></div>
+  <div class="keys-head"><h2 id="providerReviewTitle">查看请求</h2><button id="providerReviewClose" class="quiet">返回</button></div>
   <div id="providerReviewDetails"></div><p id="providerReviewNotice" class="hint"></p>
-  <label class="provider-check"><input id="providerReviewAck" type="checkbox">I have reviewed this request and its cost notice.</label>
-  <div class="provider-actions"><button id="providerReject" class="quiet">Reject request</button><button id="providerConfirm" class="quiet" disabled>Confirm request</button></div>
+  <label class="provider-check"><input id="providerReviewAck" type="checkbox">我已核对请求内容及费用说明。</label>
+  <div class="provider-actions"><button id="providerReject" class="quiet">拒绝请求</button><button id="providerConfirm" class="quiet" disabled>确认请求</button></div>
   <p id="providerReviewError" role="alert" hidden></p>
 </dialog>
 <script type="module" src="/h3take/editor-files/editor.js?v=__VERSION__"></script>

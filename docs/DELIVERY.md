@@ -1,5 +1,7 @@
 # Windows 改造交付记录
 
+2026-11-18 补充：[简体中文界面及验收](CHINESE-UI.md)。默认中文，支持纯中文项目名和导出文件名；当前回归为 565 项 Python、6 项前端测试通过。下文保留首次改造交付记录。
+
 日期：2026-11-17。目标仓库：[giuliano1101/comfyui-h3-editor](https://github.com/giuliano1101/comfyui-h3-editor)。GitHub 连接身份已核对为 `giuliano1101`，仓库返回 admin/push 权限。使用现有仓库，不再另建 fork，不推送 `igorls` 上游。
 
 起始本地树干净，HEAD 为任务书指定的 `0d2e0d1fad9218cafdb599902be252f3254b2fa1`，声明版本 0.9.1；目标远端 `main` 同为该基线。改造在 `feature/provider-foundation` 分支，交付提交以该分支/草稿 PR 的实际 head 为准。未修改 Registry 发布身份，没有发版、部署或合并主分支。

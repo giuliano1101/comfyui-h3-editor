@@ -570,7 +570,7 @@ def profile_status(available):
 
 def slug(name):
     """A safe folder name. Refuses anything that would leave the projects folder."""
-    cleaned = re.sub(r"[^A-Za-z0-9 _-]", "", str(name or "")).strip().replace(" ", "_")
+    cleaned = re.sub(r"[^A-Za-z0-9\u3400-\u9fff _-]", "", str(name or "")).strip().replace(" ", "_")
     if not cleaned:
         raise ValueError("a project needs a name with letters or numbers")
     return cleaned[:64]

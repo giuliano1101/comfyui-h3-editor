@@ -16,19 +16,19 @@ const COMFY_SOURCE = "Comfy-Org/MiniMax-H3-Image";
 // Where a rewrite can be asked for: this ComfyUI, or one of the four wire protocols the client speaks.
 // An empty address takes the client's own default.
 export const PROVIDERS = [
-  { id: "comfyui", title: "This ComfyUI", address: "", key: false, local: true,
-    hint: "Runs a text model here, with ComfyUI's Generate Text node: nothing leaves this machine, and no key is needed. Comfy recommends "
-      + COMFY_MODEL + " (6.8 GB, from " + COMFY_SOURCE + " on Hugging Face, in models/text_encoders). A shot takes seconds once the model is loaded; it waits for a render that is running." },
-  { id: "openai", title: "OpenAI-compatible", address: "https://api.openai.com/v1", key: true,
-    hint: "Any endpoint that speaks OpenAI Chat Completions: OpenAI, OpenRouter, LM Studio, vLLM, a llama.cpp server." },
-  { id: "anthropic", title: "Anthropic", address: "https://api.anthropic.com", key: true, hint: "Anthropic's Messages API." },
-  { id: "google", title: "Gemini", address: "", key: true, hint: "Google's Gemini API." },
+  { id: "comfyui", title: "本机 ComfyUI", address: "", key: false, local: true,
+    hint: "通过 ComfyUI 的 Generate Text 节点在本机运行文本模型，数据不离开此电脑，也无需密钥。Comfy 推荐 "
+      + COMFY_MODEL + "（6.8 GB，来源 " + COMFY_SOURCE + "，Hugging Face，放入 models/text_encoders）。模型加载后，每个镜头通常几秒即可完成；正在渲染时需要排队。" },
+  { id: "openai", title: "OpenAI 兼容接口", address: "https://api.openai.com/v1", key: true,
+    hint: "支持 OpenAI Chat Completions 协议的接口，例如 OpenAI、OpenRouter、LM Studio、vLLM 或 llama.cpp 服务。" },
+  { id: "anthropic", title: "Anthropic", address: "https://api.anthropic.com", key: true, hint: "Anthropic Messages API。" },
+  { id: "google", title: "Gemini", address: "", key: true, hint: "Google Gemini API。" },
   { id: "ollama", title: "Ollama", address: "http://localhost:11434", key: false,
-    hint: "A local Ollama. It answers a web page only when OLLAMA_ORIGINS allows this address." },
+    hint: "本地 Ollama。需设置 OLLAMA_ORIGINS，允许当前网页地址访问。" },
 ];
 
 export const FIELDS = ["action", "camera", "speaker", "dialogue", "sound", "music"];
-export const LABELS = { name: "Name", action: "What happens", camera: "Camera", speaker: "Who speaks", dialogue: "What they say", sound: "Sound", music: "Music", seconds: "Seconds" };
+export const LABELS = { name: "名称", action: "画面描述", camera: "运镜", speaker: "说话角色", dialogue: "台词", sound: "音频", music: "音乐", seconds: "时长（秒）" };
 export const LIMITS = { shots: [1, 12], seconds: [2, 8] };
 
 export function settings() {
@@ -70,13 +70,13 @@ async function client(given) {
 
 // What a failed call means for someone who is not reading the console.
 function explain(error, given) {
-  const text = String(error?.message || error || "The request failed.");
+  const text = String(error?.message || error || "请求失败。");
   if (/(401|403)|authentication|unauthorized|api[ _-]?key/i.test(text)) {
-    return "The endpoint refused the key. Check the key and the model's name." + (text.length < 200 ? " It said: " + text : "");
+    return "接口拒绝了密钥，请检查密钥及模型名称。" + (text.length < 200 ? "返回信息：" + text : "");
   }
   if (/failed to fetch|networkerror|load failed|econnrefused|unable to connect/i.test(text)) {
-    return "No answer from " + (given.url.trim() || provider(given.type).title) + ". Check the address, and that the endpoint accepts requests from a web page"
-      + (given.type === "ollama" ? " (set OLLAMA_ORIGINS for Ollama)." : ".");
+    return "未收到以下接口的回复：" + (given.url.trim() || provider(given.type).title) + "。请检查地址，并确认该接口允许网页请求"
+      + (given.type === "ollama" ? "（Ollama 需设置 OLLAMA_ORIGINS）。" : ".");
   }
   return text.length > 400 ? text.slice(0, 400) + "..." : text;
 }
@@ -90,7 +90,7 @@ async function uploadForComfy(picture, index) {
   form.append("subfolder", "h3take_writer");
   form.append("overwrite", "true");
   const reply = await fetch("/upload/image", { method: "POST", body: form });
-  if (!reply.ok) throw new Error("ComfyUI would not take a picture for the text model.");
+  if (!reply.ok) throw new Error("ComfyUI 无法接收供文本模型参考的图片。");
   const made = await reply.json();
   return (made.subfolder ? made.subfolder + "/" : "") + made.name;
 }
@@ -115,18 +115,18 @@ async function askComfy(given, system, user, pictures = []) {
   try {
     reply = await fetch("/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: graph, front: true }) });
   } catch (_) {
-    throw new Error("ComfyUI did not answer. Is it still running?");
+    throw new Error("ComfyUI 未响应，请确认服务仍在运行。");
   }
   const sent = await reply.json().catch(() => ({}));
   if (!reply.ok || !sent.prompt_id) {
     const said = JSON.stringify(sent.node_errors || sent.error || sent);
     if (/TextGenerateV2|PrimitiveStringMultiline|PreviewAny/.test(said) && /not found|does not exist|invalid prompt/i.test(said)) {
-      throw new Error("This ComfyUI has no Generate Text node. Update ComfyUI, or choose another provider.");
+      throw new Error("此 ComfyUI 没有 Generate Text 节点。请更新 ComfyUI，或选择其他服务商。");
     }
     if (/clip_name|value_not_in_list/i.test(said)) {
-      throw new Error(given.model.trim() + " is not in ComfyUI's models/text_encoders. Comfy recommends " + COMFY_MODEL + ", from " + COMFY_SOURCE + " on Hugging Face.");
+      throw new Error(given.model.trim() + "不在 ComfyUI 的 models/text_encoders 中。Comfy 推荐 " + COMFY_MODEL + "，来源 " + COMFY_SOURCE + "（Hugging Face）。");
     }
-    throw new Error("ComfyUI refused the request: " + said.slice(0, 300));
+    throw new Error("ComfyUI 拒绝了请求：" + said.slice(0, 300));
   }
   const until = Date.now() + 15 * 60 * 1000;
   while (Date.now() < until) {
@@ -136,15 +136,15 @@ async function askComfy(given, system, user, pictures = []) {
     if (!entry) continue;
     if (entry.status?.status_str === "error") {
       const last = (entry.status.messages || []).find((row) => row[0] === "execution_error")?.[1];
-      throw new Error("The text model failed in ComfyUI: " + String(last?.exception_message || "see ComfyUI's log").slice(0, 300));
+      throw new Error("ComfyUI 文本模型运行失败：" + String(last?.exception_message || "请查看 ComfyUI 日志").slice(0, 300));
     }
     const text = entry.outputs?.["4"]?.text?.[0];
     if (typeof text === "string") {
-      if (!text.trim()) throw new Error("The model answered with nothing. Try again, or another model.");
+      if (!text.trim()) throw new Error("模型回复为空，请重试或更换模型。");
       return text;
     }
   }
-  throw new Error("The text model had not answered after 15 minutes. ComfyUI may be busy with renders.");
+  throw new Error("文本模型超过 15 分钟仍未回复，ComfyUI 可能正在处理渲染。");
 }
 
 // What the last answer saw: how many pictures went with it, and whether the model had to do without them.
@@ -177,7 +177,7 @@ async function askOnce(given, system, user, pictures) {
     const content = reply?.message?.content;
     const text = typeof content === "string" ? content
       : Array.isArray(content) ? content.map((part) => (typeof part === "string" ? part : part?.text || "")).join("") : "";
-    if (!text.trim()) throw new Error("The model answered with nothing. Try again, or another model.");
+    if (!text.trim()) throw new Error("模型回复为空，请重试或更换模型。");
     return text;
   } catch (error) {
     throw new Error(explain(error, given));
@@ -191,7 +191,7 @@ export async function listModels(given) {
   if (given.type === "comfyui") {
     // ComfyUI's text encoders, the recommended one first. Many are encoders only and cannot write.
     const found = await fetch("/models/text_encoders").then((r) => r.json()).catch(() => null);
-    if (!Array.isArray(found)) throw new Error("ComfyUI did not list its text encoders.");
+    if (!Array.isArray(found)) throw new Error("ComfyUI 未返回文本编码器列表。");
     return found.filter((name) => typeof name === "string").sort((a, b) => (b === COMFY_MODEL) - (a === COMFY_MODEL) || a.localeCompare(b));
   }
   const model = await client(given);
@@ -213,7 +213,7 @@ export async function test(given) {
 export function parseJson(text) {
   const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const starts = [cleaned.indexOf("{"), cleaned.indexOf("[")].filter((at) => at >= 0);
-  if (!starts.length) throw new Error("The model did not answer in the form asked for. Try again, or another model.");
+  if (!starts.length) throw new Error("模型未按要求的格式回复，请重试或更换模型。");
   const start = Math.min(...starts);
   const close = cleaned[start] === "{" ? "}" : "]";
   for (let end = cleaned.lastIndexOf(close); end > start; end = cleaned.lastIndexOf(close, end - 1)) {
@@ -221,7 +221,7 @@ export function parseJson(text) {
       return JSON.parse(cleaned.slice(start, end + 1));
     } catch (_) {}
   }
-  throw new Error("The model did not answer in the form asked for. Try again, or another model.");
+  throw new Error("模型未按要求的格式回复，请重试或更换模型。");
 }
 
 const RULES = `You write shots for MiniMax H3, a model that makes one video clip with sound from a text description.
@@ -270,10 +270,10 @@ function picturesNote(pictures) {
 const shotOf = (clip) => Object.fromEntries(FIELDS.map((key) => [key, clean(clip[key])]));
 
 function fieldsFrom(value, seconds) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The model did not answer in the form asked for. Try again, or another model.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("模型未按要求的格式回复，请重试或更换模型。");
   const made = {};
   for (const key of FIELDS) made[key] = clean(value[key]);
-  if (!made.action) throw new Error("The model left What happens empty. Try again, or another model.");
+  if (!made.action) throw new Error("模型没有填写画面描述，请重试或更换模型。");
   if (seconds) {
     const wanted = Number(value.seconds);
     made.seconds = Number.isFinite(wanted) ? Math.max(LIMITS.seconds[0], Math.min(LIMITS.seconds[1], Math.round(wanted * 2) / 2)) : seconds;
@@ -310,6 +310,6 @@ export async function writeShots({ project, brief, count, seconds, pictures = []
   ];
   let rows = parseJson(await ask(given, RULES, parts.join("\n"), pictures));
   if (rows && !Array.isArray(rows) && Array.isArray(rows.shots)) rows = rows.shots;
-  if (!Array.isArray(rows) || !rows.length) throw new Error("The model did not answer with a list of shots. Try again, or another model.");
-  return rows.slice(0, LIMITS.shots[1]).map((row, index) => ({ name: clean(row?.name, 60) || "Shot " + (index + 1), ...fieldsFrom(row, each) }));
+  if (!Array.isArray(rows) || !rows.length) throw new Error("模型未返回分镜列表，请重试或更换模型。");
+  return rows.slice(0, LIMITS.shots[1]).map((row, index) => ({ name: clean(row?.name, 60) || "镜头 " + (index + 1), ...fieldsFrom(row, each) }));
 }

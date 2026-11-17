@@ -130,6 +130,21 @@ class ArchiveTest(unittest.TestCase):
                     zipped.writestr(name, body)
         return target
 
+    def test_chinese_project_archive_keeps_media_paths_and_text(self):
+        folder = project_module.slug("中文 剪辑")
+        base = os.path.join(self.tmp, folder)
+        os.makedirs(base)
+        data = project_module.retarget(demo(base, folder), "Demo", folder)
+        data["name"] = "中文 剪辑"
+        data["clips"][0]["action"] = "A paper boat. 湖面纸船。"
+        target = os.path.join(self.tmp, "中文项目.zip")
+        archive.pack(base, ROOT, folder, data, "cut", target, release="0.9.1")
+        manifest, opened = archive.unpack(target, os.path.join(self.tmp, "中文重开"))
+        self.assertEqual(manifest["folder"], folder)
+        self.assertEqual(opened["name"], data["name"])
+        self.assertEqual(opened["clips"][0]["action"], data["clips"][0]["action"])
+        self.assertEqual(opened["clips"][0]["takes"][0]["subfolder"], ROOT + "/" + folder + "/clips")
+
     def test_a_path_that_climbs_out_is_refused(self):
         with self.assertRaises(archive.ArchiveError):
             archive.read(self.zip_with([("files/../../evil.py", "x")]))

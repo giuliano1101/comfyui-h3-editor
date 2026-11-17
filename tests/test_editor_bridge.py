@@ -89,6 +89,22 @@ class BridgeHTTPTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual((await response.json())["project"]["style"], "A local test")
 
+    async def test_chinese_project_creation_save_and_reload_preserve_prompts(self):
+        response = await self.req("POST", "/projects", {"name": "中文 验收场景"})
+        self.assertEqual(response.status, 200, await response.text())
+        made = await response.json()
+        self.assertEqual(made["folder"], "中文_验收场景")
+        data = made["project"]
+        data["style"] = "Live-action, cinematic；保持原始提示词。"
+        response = await self.req("PUT", "/project/中文_验收场景", data)
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.req("GET", "/project/中文_验收场景")
+        self.assertEqual(response.status, 200)
+        loaded = await response.json()
+        self.assertEqual(loaded["style"], data["style"])
+        self.assertEqual(loaded["name"], "中文 验收场景")
+        self.assertIn("中文_验收场景", (await (await self.req("GET", "/projects")).json())["projects"])
+
     async def test_concurrent_editor_change_rejects_stale_agent_revision(self):
         args, approval = await self.proposal()
         await self.approve(approval)
