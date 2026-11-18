@@ -59,7 +59,7 @@ function setup() {
   installProviderPanel({ state, api, postJson, toast() {}, flush: async () => {}, adopt(project) {
     assert.equal(typeof project, 'object', 'job.project is a folder name, not a project document'); adopted.push(project);
   } });
-  return { node, state, jobs, calls, adopted, restore() { Object.assign(globalThis, original); } };
+  return { node, state, jobs, calls, adopted, providers, restore() { Object.assign(globalThis, original); } };
 }
 
 test('generation preview discloses input and performs no submission before confirmation', async () => {
@@ -119,5 +119,51 @@ test('typed transcript is a local edit preview and cannot trigger generation', a
     assert.equal(f.state.project.clips.length, 2);
     assert.equal(f.adopted.length, 1);
     assert.equal(f.calls.some(c => c.path === '/provider-jobs'), false);
+  } finally { f.restore(); }
+});
+
+test('timed-out microphone permission stops a late grant and leaves controls usable', async () => {
+  const f = setup();
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const originalTimeout = globalThis.setTimeout, originalClear = globalThis.clearTimeout;
+  let grant, timer, stopped = 0;
+  try {
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: () => new Promise(resolve => { grant = resolve; }) } } });
+    window.MediaRecorder = function () {};
+    globalThis.setTimeout = (callback, milliseconds) => { timer = { callback, milliseconds }; return 1; };
+    globalThis.clearTimeout = () => {};
+    await f.node('providersOpen').emit('click');
+    const pending = f.node('voiceRecord').emit('click');
+    assert.equal(timer.milliseconds, 15000);
+    assert.equal(f.node('voiceRecord').disabled, true);
+    timer.callback(); await pending;
+    assert.equal(f.node('voiceRecord').disabled, false);
+    assert.match(f.node('providerError').textContent, /麦克风授权未完成/);
+    grant({ getTracks: () => [{ stop() { stopped++; } }] });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(stopped, 1, 'late permission must not leave a live audio track');
+    assert.equal(f.calls.length, 0, 'permission timeout must not upload audio or generate');
+  } finally {
+    if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor); else delete globalThis.navigator;
+    globalThis.setTimeout = originalTimeout; globalThis.clearTimeout = originalClear; f.restore();
+  }
+});
+
+test('model capabilities narrow protocol options and CNY quotes do not authorize unpriced image generation', async () => {
+  const f = setup();
+  try {
+    const model = 'doubao-seedance-2-5-flash-261115';
+    f.providers.seedance = { available: true, enabled: true, configured: true, simulated: false, protocol: 'ark-video-v3',
+      models: [model], resolutions: ['480p','720p','4k'], durations: [4,5,6], quote_currency: 'CNY',
+      quotes_cents: { [`${model}:480p:4:text`]: 200 },
+      model_capabilities: { [model]: { resolutions: ['480p','720p'], durations: [4], modes: ['text','image','reference'] } } };
+    await f.node('providersOpen').emit('click');
+    f.node('providerSelect').value = 'seedance'; await f.node('providerSelect').emit('change');
+    assert.deepEqual(f.node('providerResolution').children.map(n => n.value), ['480p','720p']);
+    assert.deepEqual(f.node('providerSeconds').children.map(n => n.value), ['4']);
+    assert.match(f.node('providerCost').textContent, /¥2.00 人民币/);
+    f.node('providerMode').value = 'image'; await f.node('providerMode').emit('change');
+    assert.equal(f.node('providerPreview').disabled, true);
+    assert.equal(f.calls.length, 0);
   } finally { f.restore(); }
 });

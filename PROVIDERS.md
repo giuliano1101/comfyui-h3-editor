@@ -1,75 +1,87 @@
-# Provider and agent extension
+# H3 Editor 供应商、语音与 Agent
 
-Windows fork, modified 2026-11-17. Upstream baseline: `0d2e0d1fad9218cafdb599902be252f3254b2fa1`, release 0.9.1. This extends the upstream editor; it does not embed a second editor. The delivered ZIP was inspected as a three-file, process-local prototype. Its capability/state/confirmation ideas were reused selectively; its global-lock submission implementation was replaced.
+2026-11-18。H3 Editor 与原时间线继续负责项目、镜头、素材版本、剪辑、历史和导出。本地 H3 保留原 ComfyUI 工作流；外部结果先暂存，再经确认导入为新 take。MakeMyClip 未作为编辑器或时间线依赖。
 
-## What is available
+## 协议与模型能力
 
-| Capability | Status |
-|---|---|
-| Existing local H3 requests, queue, clips, timeline and history | Preserved; local GPU generation not verified in this fork |
-| Simulation | Integrated, offline, no video and no billing |
-| Durable jobs, input limits, idempotency, quota, reserved budget, cancellation races | Implemented and tested |
-| MiniMax **v1 Hailuo** text-to-video | Implemented against official docs with mocked transport and loopback HTTP; live account/API unverified; disabled by default |
-| New MiniMax H3 v2, other vendors, image/reference/audio generation | Not implemented; never advertised as supported |
-| Custom relay | Only explicitly selected `minimax-video-v1`, operator-approved exact HTTPS hosts; compatibility and billing unverified |
-| Output staging and new-take import | Tested with synthetic MP4, existing project locks, revision conflict, previous takes and history |
-| MCP stdio | Read-only by default; project-scoped, browser-approved mutations, tested protocol and HTTP bridge |
-| Voice | Local opt-in recording controls and typed/pasted transcript preview; hardware microphone unverified; automatic transcription and voice chat unavailable |
+下表为**本项目实现的子集**，不代表供应商全部能力或真实 API 验收通过。当前测试状态见[验收矩阵](docs/ACCEPTANCE-20261118.md)。
 
-See [Windows verification](docs/WINDOWS.md), [security boundaries](docs/SECURITY-PROVIDERS.md) and [delivery record](docs/DELIVERY.md).
+| 协议 | 模型 | 文生 | 首帧图生 | 图片参考 | 时长 / 分辨率 | 取消 |
+|---|---|---|---|---|---|---|
+| 原本地 H3 工作流 | 已安装 H3 配置 | 原有能力 | 原有能力 | 原镜头/角色输入 | 原项目设置，受硬件限制 | 原 ComfyUI 取消 |
+| simulation-v1 | simulation | 仅验证流程，无视频 | 无 | 无 | 1–10 秒测试值 | 本地模拟取消 |
+| minimax-video-v1 | MiniMax-Hailuo-2.3、MiniMax-Hailuo-02 | 支持 | 一张 | 无多图参考 | 768P：6/10 秒；1080P：6 秒 | 未建立官方契约，禁用 |
+| ark-video-v3 | doubao-seedance-2-5-260628 | 支持 | 一张 | 1–4 张 | 4–30 秒；480p/720p/1080p/4k | 自动 DELETE 禁用 |
+| ark-video-v3 | doubao-seedance-2-5-flash-261115 | 支持 | 一张 | 1–4 张 | 4–30 秒；480p/720p | 自动 DELETE 禁用 |
+| ark-video-v3 | doubao-seedance-2-0-260128 | 支持 | 一张 | 1–4 张 | 4–15 秒；480p/720p/1080p | 自动 DELETE 禁用 |
 
-## Configuration and credentials
+方舟关闭 `generate_audio`，保留水印。当前不接受视频/音频参考、任意素材 URL、回调、自动时长或视频编辑/延长。MiniMax 实现首帧输入，不传未实现的音频、尾帧或画幅参数。首帧模式不能称为通用参考接口。
 
-No setup, provider account, model download or paid request is performed automatically. `Providers & agent` leaves local H3's Render controls intact. A simulation completes without output, so it cannot be imported as a video.
+图片只接受当前项目目录中的首帧、尾帧或角色首图；首帧模式把所选图片作为首帧。服务端校验 PNG/JPEG/WebP、短边 >300、长边 ≤6000、宽高比 0.4–2.5、每张 ≤4 MiB/合计 ≤8 MiB。审批显示文件名、大小和 SHA-256；执行前重新检查。换图、改价或 revision 改变均拒绝提交。base64 只在请求内存，不写任务数据库。引用其他项目的角色图片需先导入本项目目录。
 
-Private state is in `<ComfyUI user>/h3-provider/`, outside output and the `/view` route:
+## 官方契约
 
-- `providers.json`: operator-owned **non-secret** configuration, read once at startup. Alternatively use the `H3_PROVIDER_CONFIG_PATH` environment variable to choose this file.
-- `jobs.sqlite3`: task IDs, state, model/parameters, project/clip IDs, timestamps, request fingerprint and budget reservations. No prompt text, keys, signed URLs or raw provider errors.
-- `staging/`: bounded validated MP4 results, with incomplete files removed. Staging is not a static route. Files stay here for explicit import/retry; no automatic purge or retention service is installed.
+核对日期 2026-11-18。账户模型开放、价格及配额仍需实际确认。
 
-Start with [providers.example.json](providers.example.json). It deliberately enables **no paid service** and contains **no sample price**. A user/operator must verify their account's tariff and supply an integer USD-cent quote per supported combination, keyed as `MODEL:RESOLUTION:SECONDS` (for example the *key* `MiniMax-Hailuo-2.3:768P:6`). An absent quote blocks that combination. Set a lifetime `budget_cents`, approve exact CDN hostnames in `download_hosts`, and only then opt in with `enabled: true`. The UI still requires review and cost confirmation for every submission. Server reservations are a conservative local limit, **not a guarantee or cap on the supplier's bill**. Reserve the maximum verified applicable tariff; taxes, account pricing and supplier changes remain external facts.
+- [MiniMax 文生](https://platform.minimax.io/docs/api-reference/video-generation-t2v)、[首帧图生](https://platform.minimax.io/docs/api-reference/video-generation-i2v)：`POST /v1/video_generation`，关闭提示词优化；`GET /v1/query/video_generation` 查询，`GET /v1/files/retrieve` 刷新下载地址。未实现 H3 v2 云端协议。
+- [方舟创建任务](https://console.volcengine.com/ark/region%3Acn-beijing/docs/create-video-generation-task-api)：`POST /api/v3/contents/generations/tasks`，Bearer 认证；审核后的图片作为 data URL，角色为 `first_frame` / `reference_image`；参考任务类型为 `auto`。
+- [方舟查询](https://docs.volcengine.com/docs/ark/get-video-generation-task-api?lang=zh)：按任务 ID 查询，签名 URL 在下载前刷新，不持久保存。
+- [方舟取消与删除](https://docs.volcengine.com/docs/ark/cancel-or-delete-video-generation-tasks-api?lang=zh)：DELETE 对排队任务取消、对终态任务删除记录。先查询再 DELETE 仍有竞争，故本适配器不自动执行；停止等待不代表取消或退款。
+- [方舟价格](https://docs.volcengine.com/docs/ark/model-pricing?lang=zh)：按模型、尺寸、时长、输入和账户确认；本地预留不是供应商账单上限。
 
-Set `MINIMAX_API_KEY` in the server process environment yourself. For a relay, choose a separate provider ID, its exact approved host and a dedicated environment variable such as `H3_RELAY_API_KEY`. Never put key values in this JSON, a project, browser fields, shell arguments, logs, Git or an agent conversation. Credential status exposes only configured/not configured. To revoke: disable the provider in configuration, remove its environment variable from the launcher/OS environment yourself, restart the server, and revoke the key in the provider console if needed. Stopping/removing a key does not cancel already accepted jobs. This fork does not implement an OS credential-vault integration.
+每任务至少间隔 10 秒查询，不自动重试。ID 不匹配、未知响应、HTTP/业务失败均脱敏。新增协议须实现 `validate/quote/submit/poll/cancel/download`，注册到 `protocol_registry()` 并补充能力与契约测试。仅修改 URL 不等于支持另一协议。
 
-Use a private per-user Windows directory/ACL for state and config. The code inherits the directory's Windows permissions; it does not claim Unix `chmod` enforces Windows access control. One local server process owns this database. Do not run two editor servers against it.
+## 配置、密钥与费用
 
-## Protocol record — reviewed 2026-11-17
+默认真实服务关闭、预算零、未知价格禁止提交。配置默认为 ComfyUI `user/h3-provider/providers.json`，可用 `H3_PROVIDER_CONFIG_PATH` 指向非公开私有目录。密钥来自服务端环境或 Windows 当前用户 DPAPI 注入，不放 JSON、项目、命令参数、日志或浏览器。
 
-Official sources: [create](https://platform.minimax.io/docs/api-reference/video-generation-t2v), [query](https://platform.minimax.io/docs/api-reference/video-generation-query), [download](https://platform.minimax.io/docs/api-reference/video-generation-download). These are the legacy **v1** Hailuo API, not the newer H3 v2 API.
+以下为关闭状态示例，**不是已核实报价或新的收费授权**。预算与报价使用同一币种的分；支持 USD/CNY。有已预留收费记录后，禁止换币种解释旧账。
 
-Implemented models are `MiniMax-Hailuo-2.3` and `MiniMax-Hailuo-02`: text input up to 2,000 characters, 6 or 10 seconds at 768P, 6 seconds at 1080P. Image, references, callbacks, audio and aspect-ratio parameters are deliberately not accepted.
-
-```http
-POST https://api.minimax.io/v1/video_generation
-Authorization: Bearer <server-only credential>
-Content-Type: application/json
-
-{"model":"MiniMax-Hailuo-2.3","prompt":"<reviewed text>","duration":6,"resolution":"768P","prompt_optimizer":false}
+```json
+{
+  "currency": "CNY",
+  "budget_cents": 200,
+  "max_active": 1,
+  "daily_jobs": 20,
+  "providers": [{
+    "id": "seedance",
+    "protocol": "ark-video-v3",
+    "credential_env": "ARK_API_KEY",
+    "enabled": false,
+    "models": ["doubao-seedance-2-5-flash-261115"],
+    "model_limits": {"doubao-seedance-2-5-flash-261115": {
+      "modes": ["text"], "durations": [4], "resolutions": ["480p"]
+    }},
+    "quotes_cents": {"doubao-seedance-2-5-flash-261115:480p:4:text": 200},
+    "download_hosts": []
+  }]
+}
 ```
 
-Successful submission returns `task_id` and `base_resp.status_code: 0`. Poll `GET /v1/query/video_generation?task_id=…`, no more often than once per task per 10 seconds. Map `Preparing`/`Queueing` to queued, `Processing` to running, `Success` to succeeded with `file_id`, and `Fail` to failed. Unknown values/IDs and nonzero/malformed `base_resp` are refused. Retrieve `GET /v1/files/retrieve?file_id=…`, validate the file ID and purpose, then download its `file.download_url` **without credentials**, through the separate approved-host policy. A refreshed URL is retrieved when needed; it is not persisted.
+先预览模型、提示词、图片与最高报价，再批准同一请求。UI/MCP 共用 `GenerationService`。累计预算预留不因失败、取消、超时或重启返还。单次预留设为整个测试预算可阻止第二次提交，但不能代替核实供应商实际报价。下载 CDN 必须在取到结果后精确审核批准，不允许任意主机。
 
-No documented cancellation or remote submission-idempotency endpoint was established for this v1 contract. Cancellation is unsupported for this adapter. An interrupted POST must be reconciled in the supplier account; never retry it automatically. Account-specific upstream rate limits were not verified: local defaults are two active tasks per connection, two globally, 20 daily submissions per connection, 10 submit requests/minute and 30 status requests/minute. 429/HTTP/provider errors are sanitized and no request is automatically retried.
+中转使用独立 ID、明确实现过的协议和精确 HTTPS API/CDN 主机，默认关闭。例如 `relay-a + ark-video-v3` 仅表示 Ark v3 兼容配置，兼容性、模型、隐私及费用仍未验收，不称通用接口。`models` 只能选择已有实现，`model_limits` 只能收窄。禁止 URL 凭据、非 443 端口、私网/元数据地址、混合 DNS、重定向与代理；API 密钥不发给 CDN。
 
-## Task lifecycle and result import
+Windows：`tools/configure-provider-key.ps1 -Provider Ark` 隐藏输入，以 DPAPI 保存并限制文件 ACL；不调用 API。`-Remove` 删除本机加密副本，远端撤销需在供应商控制台完成。`tools/start-acceptance.ps1` 仅为隔离进程解密，退出后清理进程环境。
 
-`submitting → queued → running → succeeded/failed/cancelled`. A stale queue status cannot reverse running; terminal states are final. Submission failure becomes `unknown` and remains recorded, occupying its active slot/reservation. A server restart also turns interrupted `submitting` records into `unknown`; queued tasks retain their provider task IDs. Reconciliation attaches an account-verified existing task ID. It never sends another POST. There is no unsafe “assume not billed” or “clear unknown job” action.
+## 生命周期与结果
 
-Unconfirmed cancellation remains `cancel_requested`; timeout means `timed_out`, **not** externally cancelled or refunded. Both can still be polled to a real terminal outcome. Submission, polling and cancellation run outside the database lock; a per-job in-flight guard serializes poll/cancel races. The SQLite journal commits a submission reservation before network I/O. Idempotency keys are bound to connection identity and a one-way request fingerprint.
+`submitting → queued → running → succeeded/failed/cancelled`，终态不可逆。提交网络请求前先提交 SQLite 记录；中断恢复为 `unknown`，保留预算、名额和幂等指纹，只允许关联账户已核实的任务 ID，不再次 POST。`cancel_requested/timed_out` 不表示远端已取消，仍可查询。网络不占数据库锁，同任务查询/取消互斥。
 
-Download is explicit, limited to 256 MiB and MP4 MIME/signature, then probed/decoded in a 20-second subprocess with dimension/fps/duration bounds. Network operations have socket and wall-clock deadlines, reject redirects/proxies/non-public addresses, validate every resolved A/AAAA, pin the actual peer and preserve TLS hostname verification. Normalization is bounded to 120 seconds and uses the project's existing FFmpeg path. A separate user-approved import adds a **new take** through `accept_take` and `commit`, preserving old takes. It checks the revision before conversion and again at commit. Linked H3 clips are refused because remote text-to-video cannot fulfill their held-frame contracts. A failed/conflicting import retains the staged result and removes uncommitted derived files.
-
-Jobs are outside project history. Undo/restore cannot cancel a provider task, return money or undo disclosed data. Review the provider account after an uncertain result. Neither unknown jobs nor spent reservations are silently erased on restart.
+下载显式进入非公开暂存区，最多 256 MiB；验证 HTTPS、MIME/MP4 签名、尺寸/时长/帧率并实际解码，下载与转换均有时限。导入再审批，前后校验 revision，经原 `accept_take/commit` 增加新 take、保留旧版本。关联 H3 镜头拒绝不能满足帧衔接契约的远程结果。导入不自动替换整条时间线。项目历史恢复不能退款、取消远端任务或收回已发送数据。
 
 ## MCP
 
-`tools/h3_mcp.py` implements newline-delimited UTF-8 JSON-RPC stdio using MCP protocol `2025-06-18`; no network MCP listener or extra dependency. Sources: [stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports), [tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools).
+`tools/h3_mcp.py` 通过 stdio MCP 调用现有编辑器的受限 HTTP bridge。没有第二套编辑器，也不开放任意 ComfyUI 工作流执行、文件路径或代码运行。
 
-Configure `H3_MCP_TOKEN` (at least 32 random characters) in both server and MCP subprocess environments; keep it out of chat/command arguments/config committed to Git. `H3_MCP_PROJECTS` is an exact comma-separated project-folder allowlist. With no allowlist, no project is readable. `H3_MCP_ALLOW_EDITS` defaults to off. `H3_EDITOR_PORT` defaults to 8188 in the MCP subprocess. Set these yourself in private launcher configuration, not in model-visible tool arguments.
+配置服务器与客户端的 `H3_MCP_TOKEN`、`H3_EDITOR_PORT` 及服务器精确 `H3_MCP_PROJECTS`。默认只读，`H3_MCP_ALLOW_EDITS=1` 才能提案/执行。可另设不同的 `H3_MCP_READ_TOKEN` 保持同时在线的只读连接；重复读写令牌拒绝启动。Key/令牌只放环境，不写聊天或示例值。不修改用户全局 MCP 配置。
 
-Client command: your Python executable, argument `tools/h3_mcp.py` as an absolute path. The bridge always connects to `127.0.0.1`, ignores proxies and refuses redirects.
+工具包括摘要、历史、渲染状态、费用/能力、供应商状态、工程检查，以及剪辑、字幕、恢复、导出、本地渲染/取消、外部生成、暂存和导入提案。所有修改需本地浏览器批准，绑定认证身份、具体内容和 revision，五分钟有效且只能使用一次；共享同一令牌的客户端属同一身份。Agent 无权自批、访问未列项目或绕到旧写路由。实际 SDK 连接验收见[复现步骤](docs/REPRODUCE-20261118.md)。
 
-Read tools: summary, history, local render status, export plan and provider job summaries. With operator editing enabled, `propose_*`/`execute_*` wrap batches (maximum 20 strictly schema-allowed operations), restore, staged take import, export and local render cancellation. A proposal binds the exact payload, connection and revision, expires after five minutes, and is usable once. Only the browser session can approve; the agent cannot approve itself. Concurrent user edits return 409. Exports use the approved revision snapshot. There is no paid-generation, arbitrary path, remote URL or executable VFX tool. Full natural-language planning belongs to the caller, not an implicit intent parser in the server.
+## 语音与对话
 
-Legacy human-operated `skills/h3-editor/scripts/h3.py` remains usable with a transient, in-memory local editor session. It has the local user's full editor authority and must not be substituted for the restricted MCP connection. Cookies never persist to disk. Remote URLs are refused by this fork.
+用户点击麦克风授权后最长录音 10 秒；文件上传最多 30 秒/8 MiB。转写还需勾选仅发送本机并点击确认，没有云端语音服务。`H3_ASR_MODEL` 指向已存在的离线 faster-whisper 目录，`H3_ASR_PYTHON` 指向可选隔离解释器（依赖见 `requirements-asr.txt`）。worker 禁用下载和遥测，CPU INT8、单并发、60 秒时限。取消会终止 worker；完成、失败、取消后删除临时音频。授权等待 15 秒超时，迟到授权会停止音轨。
+
+`H3_CHAT_PORT` 只连接本机 `127.0.0.1` 的结构化文本模型。模型只提意图；代码校验真实对象、字段、范围与 revision，再进入原 bridge 审批。支持镜头增删改、分割、音轨移动/音量、字幕改字、撤销、本地渲染及取消、所选服务的生成费用预览。纠错使旧草稿失效，取消不撤销已经执行的修改。
+
+录音 Blob 和对话保留在当前标签页；丢弃、关闭面板或页面后释放录音。待审批的具体内容在本机服务器内存最多五分钟，执行/拒绝/纠错会提前删除；确认的项目修改及字幕进入工程与历史。本地模型 RAM/KV 缓存可能留到后续覆盖或进程退出，运行器需关闭提示词日志。服务器音频临时文件在正常完成、失败、取消后删除；断电或强杀可能遗留系统 TEMP 中的 `h3-local-asr-*`，删除不是安全擦除。可先人工纠正转写，再预览剪辑或字幕。当前 tiny/base 中文合成语音实测有明显错字，不据此认定麦克风或识别质量通过。

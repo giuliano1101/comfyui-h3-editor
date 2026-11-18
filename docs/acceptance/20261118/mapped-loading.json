@@ -1,0 +1,8 @@
+{
+  "runtime": "isolated ComfyUI modules; initialized comfy-aimdo CUDA; second RTX 3090",
+  "tests": 1,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 0,
+  "passed": 1
+}

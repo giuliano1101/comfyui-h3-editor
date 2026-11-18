@@ -3,9 +3,10 @@
 Loopback alone is not authentication. Browser sessions require a same-origin
 custom-header bootstrap and an HttpOnly/SameSite cookie. MCP uses an operator-set
 bearer secret and an explicit project allowlist; it cannot call legacy write routes.
-Modified 2026-11-17, GPL-3.0.
+Modified 2026-11-17 and 2026-11-18, GPL-3.0.
 """
 from collections import defaultdict, deque
+import asyncio
 from dataclasses import dataclass
 import hashlib
 import hmac
@@ -28,6 +29,9 @@ class Identity:
 
 class Access:
     def __init__(self, clock=time.time):
+        write_key,read_key=os.environ.get('H3_MCP_TOKEN',''),os.environ.get('H3_MCP_READ_TOKEN','')
+        if len(write_key)>=32 and hmac.compare_digest(write_key,read_key):
+            raise ValueError('MCP read and write tokens must be different')
         self.clock, self.sessions = clock, {}
         self.rates = defaultdict(deque)
         self.pending = {}
@@ -95,11 +99,15 @@ class Access:
         authorization = request.headers.get("Authorization", "")
         if authorization:
             key = os.environ.get("H3_MCP_TOKEN", "")
-            if len(key) < 32 or not hmac.compare_digest(authorization, "Bearer " + key):
+            read_key = os.environ.get("H3_MCP_READ_TOKEN", "")
+            write_match = len(key)>=32 and hmac.compare_digest(authorization,"Bearer "+key)
+            read_match = len(read_key)>=32 and hmac.compare_digest(authorization,"Bearer "+read_key)
+            if not write_match and not read_match:
                 raise self.error(status=401)
             # Connection names/allowlists are server facts, never accepted in request JSON.
             projects = frozenset(x.strip() for x in os.environ.get("H3_MCP_PROJECTS", "").split(",") if x.strip())
-            identity = Identity("mcp-local", False, projects, os.environ.get("H3_MCP_ALLOW_EDITS") == "1")
+            identity = Identity("mcp-local" if write_match else "mcp-read-local", False, projects,
+                                write_match and os.environ.get("H3_MCP_ALLOW_EDITS") == "1")
         else:
             session = self.sessions.get(request.cookies.get("h3_session", ""))
             if session is None or session[1] <= self.clock():
@@ -121,8 +129,16 @@ class Access:
         if len(self.pending) >= 64:
             raise web.HTTPTooManyRequests(text="approval capacity reached")
         proposal = {"id": secrets.token_urlsafe(24), "owner": identity.name, "action": action,
-                    "payload": payload, "expires": now + 300, "approved": False}
+                    "payload": payload, "expires": now + 300, "approved": False,
+                    "requested_by": "browser" if identity.browser else "agent"}
         self.pending[proposal["id"]] = proposal
+        try:
+            # Remove unexecuted content even if the browser closes and no new
+            # proposal arrives. Capture the ID, not a stale dictionary snapshot.
+            proposal_id = proposal['id']
+            asyncio.get_running_loop().call_later(300, lambda: self.pending.pop(proposal_id, None))
+        except RuntimeError:
+            pass  # Synchronous callers are pruned by their next operation.
         return {k: v for k, v in proposal.items() if k != "owner"}
 
     def approve(self, identity, proposal_id):

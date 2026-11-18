@@ -15,6 +15,27 @@ def request(**kwargs):
 
 
 class SecurityTest(unittest.TestCase):
+    def test_pending_content_is_removed_when_idle_expiry_timer_runs(self):
+        loop=mock.Mock()
+        access=Access()
+        with mock.patch('editor_security.asyncio.get_running_loop',return_value=loop):
+            proposal=access.propose(Identity('editor',True,edit=True),'ops',{'project':'Test','revision':1,'ops':[]})
+        delay,callback=loop.call_later.call_args.args
+        self.assertEqual(delay,300)
+        access.pending=dict(access.pending)  # Later proposals may rebuild the dictionary.
+        callback()
+        self.assertNotIn(proposal['id'],access.pending)
+
+    def test_read_token_cannot_be_the_edit_token(self):
+        with mock.patch.dict(os.environ,{'H3_MCP_TOKEN':'x'*40,'H3_MCP_READ_TOKEN':'x'*40}), self.assertRaises(ValueError):
+            Access()
+
+    def test_separate_read_token_never_enables_editing(self):
+        with mock.patch.dict(os.environ,{'H3_MCP_TOKEN':'w'*40,'H3_MCP_READ_TOKEN':'r'*40,'H3_MCP_PROJECTS':'Test','H3_MCP_ALLOW_EDITS':'1'}):
+            identity=Access().authenticate(request(headers={'Authorization':'Bearer '+'r'*40}))
+            self.assertFalse(identity.edit)
+            self.assertEqual(identity.projects,frozenset({'Test'}))
+
     def test_session_requires_custom_header(self):
         access = Access()
         with self.assertRaises(web.HTTPForbidden):

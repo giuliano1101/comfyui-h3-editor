@@ -3,6 +3,8 @@ __pycache__/
 .DS_Store
 .taste-skill/
 .ui-test/
+.acceptance/
+.ruff_cache/
 .ui-test-*/
 .test-deps/
 .test-tmp/

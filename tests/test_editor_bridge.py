@@ -170,6 +170,6 @@ class BridgeHTTPTest(unittest.IsolatedAsyncioTestCase):
     async def test_unauthenticated_cross_origin_unknown_fields_and_size(self):
         self.assertEqual((await self.req("GET", "/providers", headers={"Origin": "https://evil.example"})).status, 403)
         self.assertEqual((await self.tool("summary", {"project": "Test", "token": "secret"})).status, 400)
-        self.assertEqual((await self.tool("summary", {"project": "Test", "padding": "x" * 40000})).status, 413)
+        self.assertEqual((await self.tool("summary", {"project": "Test", "padding": "x" * 530000})).status, 413)
         async with TestClient(TestServer(make_app(Path(self.temp.name) / "second", "_h3_second_" + uuid4().hex))) as client:
             self.assertEqual((await client.get("/h3take/api/providers")).status, 401)

@@ -153,3 +153,25 @@ class ProviderMediaTest(unittest.IsolatedAsyncioTestCase):
         with av.open(str(path)) as container:
             decoded = list(container.decode(video=0))
         self.assertGreaterEqual(len(decoded), 47)
+
+    async def test_parallel_exports_reserve_distinct_files_and_keep_existing_output(self):
+        import json
+        await self.stage()
+        await self.runtime.staging.import_take(self.runtime.manager,self.job,'editor','Test',self.clip,1)
+        data=self.api.read_project('Test')
+        directory=Path(self.api.root())/'Test'/'exports';directory.mkdir(parents=True,exist_ok=True)
+        existing=directory/'Test_001.mp4';existing.write_bytes(b'preserved-existing-export')
+        replies=await asyncio.gather(self.api.export_snapshot('Test',data),self.api.export_snapshot('Test',data))
+        files=[json.loads(reply.text)['filename'] for reply in replies]
+        self.assertEqual(len(set(files)),2)
+        self.assertEqual(existing.read_bytes(),b'preserved-existing-export')
+        for file in files:
+            with av.open(str(directory/file)) as container:
+                self.assertGreaterEqual(len(list(container.decode(video=0))),47)
+
+    async def test_failed_export_removes_only_its_reserved_partial_output(self):
+        await self.stage()
+        await self.runtime.staging.import_take(self.runtime.manager,self.job,'editor','Test',self.clip,1)
+        with mock.patch.object(self.api,'run',mock.AsyncMock(side_effect=RuntimeError('fixture failure'))),self.assertRaises(RuntimeError):
+            await self.api.export_snapshot('Test',self.api.read_project('Test'))
+        self.assertEqual(list((Path(self.api.root())/'Test'/'exports').glob('*.mp4')),[])

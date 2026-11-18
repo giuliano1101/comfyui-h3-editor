@@ -1,5 +1,11 @@
 # Changelog
 
+## Windows fork working changes, 2026-11-18 (unreleased)
+
+- Ark video v3, reviewed first-frame/reference images, per-model capability restrictions, and currency-bound CNY/USD reservations share browser/MCP approvals.
+- Offline speech and structured chat previews, correction/cancellation, subtitle import/edit/burn-in, audio layout/alignment and missing-media export checks extend the existing timeline.
+- Isolated ComfyUI and real MCP SDK acceptance, concurrent export filename reservations, local media demuxer/protocol restrictions, and reproducible evidence. See docs/ACCEPTANCE-20261118.md for unpassed API/GPU/microphone conditions.
+
 ## Windows fork compatibility
 
 - Selectively backported upstream 6d5ad8e: skip pinning read-only HyperFlow model mappings on ComfyUI 0.44+. Other upstream 0.10-0.12 changes are not included.

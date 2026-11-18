@@ -17,7 +17,9 @@ const STAGES = { 10: "正在解析提示词", 15: "正在采样", 16: "正在解
 import { VfxRuntime } from "./vfx-runtime.js";
 import * as writer from "./writer.js";
 import { installProviderPanel } from "./providers.js";
-import { uiMessage } from "./ui-zh.js";
+import { installEditingPanel } from "./editing-panel.js";
+import { installConversation } from "./conversation-panel.js";
+import { uiMessage, modelNotice } from "./ui-zh.js";
 
 const editorSession = fetch("/h3take/api/session", { headers: { "X-H3-Editor": "1" } }).then((response) => {
   if (!response.ok) throw new Error("无法建立本机编辑器会话。请使用 localhost 地址并刷新页面。");
@@ -150,6 +152,7 @@ async function api(path, options) {
   headers.set("X-H3-Editor", "1");
   const response = await fetch("/h3take/api" + path, { ...options, headers });
   if (!response.ok) {
+    if (response.status === 401) throw new Error('编辑器会话已失效。请保留未保存文字，核对已提交任务后刷新页面。');
     const text = await response.text();
     let message = text;
     try { message = JSON.parse(text).error || text; } catch (_) {}
@@ -3211,7 +3214,7 @@ function renderScene(panel, selected = false) {
   const describeModel = () => {
     const profile = profileOf(models.value);
     if (!profile) modelHint.textContent = "";
-    else if (profile.available) modelHint.textContent = [uiMessage(profile.hint) + "新渲染使用此设置。", ...state.finals, ...state.encoders.missing].join(" ");
+    else if (profile.available) modelHint.textContent = [uiMessage(profile.hint) + "新渲染使用此设置。", ...state.finals.map(modelNotice), ...state.encoders.missing.map(modelNotice)].join(" ");
     else modelHint.textContent = "未安装。需要 " + profile.missing.join(" 和 ") + ".";
   };
   describeModel();
@@ -8586,9 +8589,12 @@ function bindNoteLayer() {
 }
 bindNoteLayer();
 
-installProviderPanel({ state, api, postJson, toast, adopt, async flush() {
+const extensionContext = { state, api, postJson, toast, adopt, async flush() {
   await flush();
-  if (unsaved()) throw new Error("请先保存当前修改，再准备供应商任务。");
-} });
+  if (unsaved()) throw new Error("请先保存当前修改，再准备操作预览。");
+} };
+const providerPanel = installProviderPanel(extensionContext);
+installEditingPanel({ ...extensionContext, review: providerPanel.review, viewing });
+installConversation({ ...extensionContext, ...providerPanel });
 
 start().catch((error) => toast(error.message, true));

@@ -9,6 +9,15 @@ Windows provider fork modifications, 2026-11-17
   New fork code is GPL-3.0 under LICENSE. No MakeMyClip source or model weights are
   included. Upstream and third-party notices below remain applicable.
 
+Additional Windows fork modifications, 2026-11-18
+  Added Ark video v3 and reviewed first-frame/reference-image inputs, narrowed
+  per-model capabilities, shared UI/MCP generation approvals and currency-bound
+  reservations; local-only speech/structured chat previews; subtitles, audio
+  alignment/layout, missing-media export checks and isolated acceptance tools.
+  Selected upstream 6d5ad8e's mapped-weight pin compatibility fix (b7130a0 locally).
+  New fork source remains GPL-3.0. No runtime/model weights or private credentials
+  are distributed. Synthetic acceptance media are test fixtures, not AI outputs.
+
 H3 Editor is licensed under the GNU General Public License v3.0, in LICENSE.
 This pack includes work from other projects, each under its own license.
 

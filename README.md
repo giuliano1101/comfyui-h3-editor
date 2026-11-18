@@ -1,12 +1,12 @@
 # H3 Editor
 
-> **Windows provider fork (experimental):** based on upstream commit `0d2e0d1`.
-> Adds offline simulated jobs, disabled-by-default MiniMax v1 Hailuo adapters,
-> staged new-take import and a scoped local MCP bridge in the existing editor.
-> No live paid API or GPU H3 generation has been verified in this fork.
-> Start with [Windows checks](docs/WINDOWS.md), [provider setup](PROVIDERS.md),
-> [security boundaries](docs/SECURITY-PROVIDERS.md) and [delivery status](docs/DELIVERY.md).
-> The discovered local ComfyUI 0.37.0 was left unchanged; upstream requires 0.43+.
+> **Windows 中文实验分支（2026-11-18）：** 基于上游 `0d2e0d1`，保留原 H3 Editor 与时间线。
+> 增加 MiniMax v1 / 方舟 v3 官方协议与受限兼容配置、参考图/费用预览、新 take 导入、
+> 同机制 MCP 审批、本地语音/聊天预览、字幕与音轨工具。真实服务默认关闭。
+> 本机 ComfyUI 已在前序授权中升级至 0.45.0；H3 插件只在隔离副本部署，没有覆盖生产安装。
+> 真实 API 尚未调用；H3 GPU 尝试因系统 RAM 取消；麦克风与转写质量尚未通过。
+> 详见[完整验收矩阵](docs/ACCEPTANCE-20261118.md)、[复现步骤](docs/REPRODUCE-20261118.md)、
+> [供应商配置](PROVIDERS.md)、[安全边界](docs/SECURITY-PROVIDERS.md)与[分层许可核查](docs/LICENSE-REVIEW-20261118.md)。
 
 A timeline video editor for MiniMax H3, inside ComfyUI. Write your shots,
 render them on your own GPU, and cut them together, picture and sound.

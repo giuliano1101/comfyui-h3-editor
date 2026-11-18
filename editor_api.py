@@ -11,12 +11,14 @@ import subprocess
 import sys
 import time
 import uuid
+import tempfile
 
 from aiohttp import web
 
 import folder_paths
 
 from . import archive
+from . import captions
 from . import cuts as cutscore
 from . import listen as soundscore
 from . import detail as finescore
@@ -2071,6 +2073,10 @@ async def export_snapshot(name, data, body=None):
         raise web.HTTPBadRequest(text=str(error))
     if body.get("plan"):
         return web.json_response({"plan": plan, "name": name})
+    from .editing_tools import health
+    missing = [row for row in health(sys.modules[__name__], data)['missing'] if row['kind'] in ('effects','sounds')]
+    if missing:
+        raise web.HTTPConflict(text='存在缺失音频或特效，请先打开“剪辑工具 → 工程检查”，恢复素材或移除对应条目。')
     paths = {}
     for clip in data.get("clips", []):
         take = store.active_take(clip)
@@ -2081,9 +2087,16 @@ async def export_snapshot(name, data, body=None):
     # The file is named after the project, or after what the user typed, and numbered so nothing is overwritten.
     stem = store.slug(body["name"]) if str(body.get("name") or "").strip() else name
     number = 1
-    while os.path.exists(os.path.join(folder, "%s_%03d.mp4" % (stem, number))):
-        number += 1
-    target = os.path.join(folder, "%s_%03d.mp4" % (stem, number))
+    while True:
+        target = os.path.join(folder, "%s_%03d.mp4" % (stem, number))
+        try:
+            # Reserve atomically before FFmpeg starts. Parallel exports must not
+            # both select the same absent filename and then overwrite each other.
+            with open(target, 'xb'):
+                pass
+            break
+        except FileExistsError:
+            number += 1
     sound_paths = {}
     for sound in data.get("sounds") or []:
         try:
@@ -2107,8 +2120,21 @@ async def export_snapshot(name, data, body=None):
         args = store.export_command(data, paths, target, scale=scale, quality=quality, sound_paths=sound_paths,
                                     effect_paths=effect_paths)
     except ValueError as error:
+        os.remove(target)
         raise web.HTTPBadRequest(text=str(error))
-    await run(args)
+    try:
+        with tempfile.TemporaryDirectory(prefix="h3-captions-") as scratch:
+            if data.get("subtitles"):
+                subtitle_path = os.path.join(scratch, "captions.ass")
+                with open(subtitle_path, "w", encoding="utf-8") as subtitle_file:
+                    subtitle_file.write(captions.ass(data, plan["width"], plan["height"]))
+                args = store.export_command(data, paths, target, scale=scale, quality=quality, sound_paths=sound_paths,
+                                            effect_paths=effect_paths, subtitle_path=subtitle_path)
+            await run(args)
+    except BaseException:
+        if os.path.exists(target):
+            os.remove(target)
+        raise
     return web.json_response({
         "filename": os.path.basename(target),
         "subfolder": "%s/%s/exports" % (store.ROOT, name),

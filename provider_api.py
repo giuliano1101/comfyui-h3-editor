@@ -11,6 +11,9 @@ from .editor_bridge import Bridge
 from .provider_adapters import configured_adapters
 from .provider_jobs import JobError, JobManager, identifier
 from .provider_media import Staging
+from .provider_service import GenerationService
+from .speech import LocalSpeech
+from .conversation import Conversation
 
 
 class Runtime:
@@ -29,19 +32,23 @@ class Runtime:
                 raise JobError("invalid provider server limits")
         self.manager = JobManager(configured_adapters(config), db_path=directory / "jobs.sqlite3",
                                   budget_cents=config.get("budget_cents", 0), max_active=config.get("max_active", 2),
-                                  daily_jobs=config.get("daily_jobs", 20))
+                                  daily_jobs=config.get("daily_jobs", 20), currency=config.get('currency','USD'))
         self.staging = Staging(directory / "staging", api)
         self.bridge = Bridge(api, self.access, self.manager, self.staging)
+        self.generations = GenerationService(api, self.access, self.manager, self.staging)
+        self.bridge.generations = self.generations
         self.media_slots = asyncio.Semaphore(2)
+        self.speech = LocalSpeech()
+        self.conversation = Conversation(api, self.bridge, self.access)
 
-    async def json(self, request, allowed, required=()):
+    async def json(self, request, allowed, required=(), limit=32768):
         if request.content_type != "application/json":
             raise JobError("application/json required")
         # Read bounded chunks even when Content-Length is absent/chunked.
         raw = bytearray()
         async for chunk in request.content.iter_chunked(8192):
             raw.extend(chunk)
-            if len(raw) > 32768:
+            if len(raw) > limit:
                 raise JobError("request too large", "too_large", 413)
         try:
             body = json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
@@ -66,7 +73,7 @@ class Runtime:
                 if handler not in ("bridge_tools", "bridge_call"):
                     raise self.access.error("MCP connection must use the scoped bridge")
             request["h3_identity"] = identity
-            if handler.startswith(("provider_", "bridge_")):
+            if handler.startswith(("provider_", "bridge_", "speech_", "conversation_")):
                 result = await getattr(self, handler)(request, identity)
                 response = web.json_response(result)
             else:
@@ -88,7 +95,26 @@ class Runtime:
         return {"providers": self.manager.capabilities(), "local_h3": "existing ComfyUI render path",
                 "usage": self.manager.usage(identity.name),
                 "budget": "lifetime local reservation; not a guarantee of provider charges",
-                "voice": "local recording and explicit command preview; no transcription service configured"}
+                "voice": self.speech.capabilities()}
+
+    async def speech_capabilities(self, request, identity):
+        return self.speech.capabilities()
+
+    async def speech_transcribe(self, request, identity):
+        self.access.throttle(identity.name,"asr",10)
+        return await self.speech.transcribe(request)
+
+    async def speech_cancel(self, request, identity):
+        body=await self.json(request,('request',),('request',))
+        return self.speech.cancel(body['request'])
+
+    async def conversation_capabilities(self, request, identity):
+        return self.conversation.capabilities()
+
+    async def conversation_preview(self, request, identity):
+        self.access.throttle(identity.name,"conversation",20)
+        body=await self.json(request,("project","revision","utterance","selected_clip","selected_item","selected_sound","previous","previous_approval","generation"),("project","revision","utterance"))
+        return await self.conversation.preview(identity,body)
 
     async def provider_list(self, request, identity):
         folder = self.folder(request.query.get("project"))
@@ -96,39 +122,12 @@ class Runtime:
 
     async def provider_preview(self, request, identity):
         fields = ("provider", "model", "resolution", "prompt", "seconds", "project", "clip", "revision")
-        body = await self.json(request, fields, fields)
-        folder = self.folder(body["project"])
-        if type(body["revision"]) is not int:
-            raise JobError("revision required")
-        async with self.api.lock(folder):
-            data = self.api.read_project(folder)
-            if data["revision"] != body["revision"]:
-                raise JobError("project revision changed", "conflict", 409)
-            clip = self.api.store.find_clip(data, identifier(body["clip"], "clip"))
-            if clip.get("link"):
-                raise JobError("remote generation cannot fulfill local H3 linked-frame contracts")
-        adapter, generation = self.manager.validate(body["provider"], body["prompt"], body["seconds"], body["model"], body["resolution"])
-        proposal = self.access.propose(identity, "provider_submit", body)
-        proposal.update(cost_notice=adapter.capabilities.cost_notice, estimate_cents=adapter.quote(generation),
-                        simulated=adapter.capabilities.simulated)
-        return proposal
+        body = await self.json(request, (*fields, "mode", "references"), fields)
+        return await self.generations.preview(identity, body)
 
     async def provider_submit(self, request, identity):
         body = await self.json(request, ("approval", "cost_acknowledged"), ("approval", "cost_acknowledged"))
-        approval = body["approval"]
-        proposal = self.access.pending.get(approval) if isinstance(approval, str) else None
-        if not proposal or proposal["action"] != "provider_submit" or body["cost_acknowledged"] is not True:
-            raise JobError("review and confirm the cost notice first", "confirmation_required", 409)
-        payload = proposal["payload"]
-        async with self.api.lock(payload["project"]):
-            data = self.api.read_project(payload["project"])
-            if data["revision"] != payload["revision"]:
-                raise JobError("project revision changed; preview again", "conflict", 409)
-            self.access.consume(identity, approval, "provider_submit", payload)
-        self.access.throttle(identity.name, "submit", 10)
-        return await asyncio.to_thread(self.manager.submit, payload["provider"], payload["prompt"], payload["seconds"],
-            model=payload["model"], resolution=payload["resolution"], owner=identity.name, cost_acknowledged=True,
-            idempotency_key=approval, project=payload["project"], clip=payload["clip"])
+        return await self.generations.submit(identity, body["approval"], body["cost_acknowledged"])
 
     async def provider_job(self, request, identity):
         job = identifier(request.match_info["job"], "job")
@@ -167,7 +166,7 @@ class Runtime:
         return {"tools": self.bridge.tools(identity)}
 
     async def bridge_call(self, request, identity):
-        body = await self.json(request, ("name", "arguments"), ("name", "arguments"))
+        body = await self.json(request, ("name", "arguments"), ("name", "arguments"), limit=524288)
         if not isinstance(body["name"], str):
             raise JobError("invalid tool name")
         async with self.media_slots:
@@ -175,6 +174,11 @@ class Runtime:
 
 
 ROUTES = (
+    ("GET", "/h3take/api/conversation", "conversation_capabilities"),
+    ("POST", "/h3take/api/conversation/preview", "conversation_preview"),
+    ("GET", "/h3take/api/speech", "speech_capabilities"),
+    ("POST", "/h3take/api/speech/transcribe", "speech_transcribe"),
+    ("POST", "/h3take/api/speech/cancel", "speech_cancel"),
     ("GET", "/h3take/api/session", "provider_session"),
     ("GET", "/h3take/api/providers", "provider_capabilities"),
     ("GET", "/h3take/api/provider-jobs", "provider_list"),

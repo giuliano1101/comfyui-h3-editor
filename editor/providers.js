@@ -4,13 +4,18 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
   const $ = (id) => document.getElementById(id);
   const panel = $("providersPanel");
   let providers = {}, review = null, busy = false, refreshTimer = 0, selectedClip = null;
-  let recorder = null, stream = null, recordingURL = null, recordingTimer = 0, recordingEpoch = 0;
-  const money = (cents) => cents == null ? "价格未知，已禁用付费生成。" : cents === 0 ? "模拟任务：不生成视频、不收费。" : `服务器报价：$${(cents / 100).toFixed(2)} 美元/次。实际账单可能不同。`;
+  let recorder = null, stream = null, recordingURL = null, recordingTimer = 0, recordingEpoch = 0, recordingBlob = null;
+  const modeNames = { text: "文生视频", image: "首帧图生视频", reference: "图片参考生视频" };
+  let referenceSelections = new Map();
+  const modelCap = () => chosen()?.model_capabilities?.[$("providerModel").value] || chosen();
+  const money = (cents, currency = chosen()?.quote_currency || "USD") => cents == null ? "价格未知，已禁用付费生成。" : cents === 0 ? "模拟任务：不生成视频、不收费。" : `服务器最高报价：${currency === "CNY" ? "¥" : "$"}${(cents / 100).toFixed(2)} ${currency === "CNY" ? "人民币" : "美元"}/次。实际账单可能不同。`;
   const chosen = () => providers[$("providerSelect").value];
-  const actionNames = { ops: "编辑镜头", restore: "恢复历史版本", import: "导入新素材版本", export: "导出剪辑", cancel: "取消本地渲染" };
+  const actionNames = { ops: "编辑镜头", restore: "恢复历史版本", import: "导入新素材版本", export: "导出剪辑", cancel: "取消本地渲染", local_render: "本地 GPU 渲染", provider_submit: "外部生成", provider_cancel: "取消外部任务", stage: "下载到暂存区", captions_import: "导入字幕" };
   const estimate = () => {
     const provider = chosen();
-    return provider?.simulated ? 0 : provider?.quotes_cents?.[`${$("providerModel").value}:${$("providerResolution").value}:${$("providerSeconds").value}`] ?? null;
+    const key = `${$("providerModel").value}:${$("providerResolution").value}:${$("providerSeconds").value}`;
+    const mode = $("providerMode").value || "text";
+    return provider?.simulated ? 0 : provider?.quotes_cents?.[`${key}:${mode}`] ?? (mode === "text" ? provider?.quotes_cents?.[key] : null) ?? null;
   };
   const el = (tag, text, className) => {
     const node = document.createElement(tag);
@@ -32,15 +37,15 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
   };
   function options(id, values, current) {
     $(id).replaceChildren(...values.map((value) => {
-      const option = el("option", value === "simulation" ? "模拟模型" : value === "test" ? "测试" : value);
+      const option = el("option", modeNames[value] || (value === "simulation" ? "模拟模型" : value === "test" ? "测试" : value));
       option.value = value;
       return option;
     }));
-    if (values.includes(current)) $(id).value = current;
+    $(id).value = values.includes(current) ? current : values[0] || "";
   }
   function updateDuration() {
     const provider = chosen();
-    const durations = provider.protocol === "minimax-video-v1" && $("providerResolution").value === "1080P" ? [6] : provider.durations;
+    const durations = provider.protocol === "minimax-video-v1" && $("providerResolution").value === "1080P" ? [6] : modelCap().durations;
     options("providerSeconds", durations.map(String), $("providerSeconds").value);
     updateQuote();
   }
@@ -52,17 +57,40 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     const provider = chosen();
     if (!provider) return;
     options("providerModel", provider.models, $("providerModel").value);
-    options("providerResolution", provider.resolutions, $("providerResolution").value);
-    updateDuration();
-    $("providerStatus").textContent = provider.simulated ? "模拟服务可用，不会生成媒体文件。" : `${uiMessage(provider.service)}：${uiMessage(provider.status)}。凭据：${provider.configured ? "已配置" : "未配置"}；${provider.enabled ? "管理员已启用" : "管理员已禁用"}。取消能力：${provider.cancellation ? "支持" : "不支持"}。`;
+    updateModelCapabilities();
+    $("providerStatus").textContent = provider.simulated ? "模拟服务可用，不会生成媒体文件。" : `${uiMessage(provider.service)} · ${provider.protocol}：${uiMessage(provider.status)}。凭据：${provider.configured ? "已配置" : "未配置"}；${provider.enabled ? "管理员已启用" : "管理员已禁用"}。取消能力：${provider.cancellation ? "支持" : "不支持安全取消"}。`;
     $("providerCost").textContent = money(estimate());
     setClip();
+  }
+  function updateModelCapabilities() {
+    const cap = modelCap();
+    options("providerResolution", cap.resolutions, $("providerResolution").value);
+    options("providerMode", cap.modes || ["text"], $("providerMode").value);
+    $("providerCapabilityNote").textContent = "按当前协议与模型限制展示。图片仅从本项目选择，首帧模式一张、图片参考模式最多四张；当前未实现视频、音频参考或自动时长。Ark 输出关闭音频，MiniMax 输出以模型为准。";
+    updateDuration(); renderReferences();
+  }
+  function renderReferences() {
+    const root = $("providerReferences"); root.replaceChildren();
+    if (($("providerMode").value || "text") === "text") { referenceSelections.clear(); return; }
+    const clip = state.project?.clips.find(c => c.id === state.clip);
+    const candidates = [];
+    if (clip?.first) candidates.push([{ source: "first" }, "当前镜头首帧"]);
+    if (clip?.last) candidates.push([{ source: "last" }, "当前镜头尾帧作为输入图片"]);
+    for (const cast of state.project?.cast || []) if (cast.file) candidates.push([{ source: "cast", id: cast.id }, `角色首张图片：${cast.name || cast.id}`]);
+    for (const [selector, title] of candidates) {
+      const label = el("label", null, "provider-check"), box = el("input"); box.type = "checkbox";
+      const key = JSON.stringify(selector); box.checked = referenceSelections.has(key);
+      box.addEventListener("change", () => { if (box.checked) referenceSelections.set(key, selector); else referenceSelections.delete(key); });
+      label.append(box, el("span", title)); root.append(label);
+    }
+    if (!candidates.length) root.append(el("p", "请先为当前镜头或角色添加图片。图片需大于 300 像素，单张不超过 4 MiB。", "hint"));
   }
   function setClip() {
     const clip = state.project?.clips.find((row) => row.id === state.clip);
     $("providerClip").textContent = clip ? `当前镜头：${clip.name || clip.id}` : "请先在编辑器中选择一个镜头。";
     if (selectedClip !== clip?.id) {
       selectedClip = clip?.id;
+      referenceSelections.clear(); renderReferences();
       $("providerPrompt").value = clip?.action || "";
     }
     $("providerPreview").disabled = !chosen()?.available || estimate() == null || !clip || Boolean(clip.link);
@@ -76,9 +104,9 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     if (folder !== state.folder || panel.hidden) return;
     setClip();
     const usage = jobs.usage;
-    $("providerLimits").textContent = `${usage.active}/${usage.max_active} 个活动任务 · ${usage.connection_today}/${usage.connection_daily_limit} 次今日提交。预留预算余额：$${(usage.remaining_cents / 100).toFixed(2)} 美元。此为本地限制，实际供应商收费可能不同。`;
+    $("providerLimits").textContent = `${usage.active}/${usage.max_active} 个活动任务 · ${usage.connection_today}/${usage.connection_daily_limit} 次今日提交。预留预算余额：${usage.currency === "CNY" ? "¥" : "$"}${(usage.remaining_cents / 100).toFixed(2)} ${usage.currency === "CNY" ? "人民币" : "美元"}。此为本地限制，实际供应商收费可能不同。`;
     renderJobs(jobs.jobs);
-    renderApprovals(approvals.proposals.filter((p) => p.payload.project === folder && p.action !== "provider_submit"));
+    renderApprovals(approvals.proposals.filter((p) => p.payload.project === folder && (p.action !== "provider_submit" || p.requested_by === "agent")));
   }
   function action(label, callback, disabled = false) {
     const button = el("button", label, "quiet");
@@ -141,12 +169,22 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     review = { proposal, executeHere };
     $("providerReviewAck").checked = false;
     $("providerConfirm").disabled = true;
-    $("providerConfirm").textContent = proposal.action === "provider_submit" ? (proposal.simulated ? "运行模拟" : "确认付费生成") : executeHere ? "确认并应用" : "批准 Agent 执行";
+    $("providerConfirm").textContent = !executeHere ? "批准 Agent 执行" : proposal.action === "provider_submit" ? (proposal.simulated ? "运行模拟" : "确认付费生成") : "确认并应用";
     $("providerReviewTitle").textContent = proposal.action === "provider_submit" ? "确认生成任务" : "确认项目修改";
     const details = $("providerReviewDetails"), payload = proposal.payload;
     details.replaceChildren(el("p", `项目：${payload.project} · 修订版本 ${payload.revision}`));
     if (proposal.action === "provider_submit") {
-      details.append(el("p", `${providerName(payload.provider)} · ${uiMessage(payload.model)} · ${payload.seconds} 秒 · ${uiMessage(payload.resolution)}`), el("pre", payload.prompt), el("p", money(proposal.estimate_cents)));
+      details.append(el("p", `${providerName(payload.provider)} · ${uiMessage(payload.model)} · ${payload.seconds} 秒 · ${uiMessage(payload.resolution)}`), el("pre", payload.prompt), el("p", money(proposal.estimate_cents, proposal.currency)));
+      details.append(el("p", modeNames[payload.mode || "text"]));
+      for (const image of payload.reference_disclosure || []) details.append(el("p", `将发送图片：${image.name} · ${image.bytes} 字节 · SHA-256 ${image.sha256.slice(0, 12)}`));
+      details.append(el("p", uiMessage(proposal.cost_notice || "")));
+    } else if (proposal.action === "captions_import") {
+      details.append(el("p", `${payload.replace ? "替换现有字幕" : "追加字幕"}，共 ${payload.cues.length} 条；时间以 24 fps 帧计。`));
+      for (const cue of payload.cues) details.append(el("p", `${cue.start} → ${cue.end}：${cue.text}`));
+    } else if (proposal.action === "export" && proposal.export_plan) {
+      const plan = proposal.export_plan;
+      details.append(el("p", `导出当前修订的完整时间线：${plan.width} × ${plan.height}，${plan.seconds} 秒，${plan.clips} 个片段。字幕将烧录，声音按现有音轨混合。`));
+      details.append(el("p", `草稿素材：${plan.drafts}；缺失特效：${plan.effects_missing}。生成新文件，保留已有导出。`));
     } else if (proposal.action === "ops") {
       for (const op of payload.ops) {
         details.append(el("b", operationName(op.op)));
@@ -168,6 +206,8 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     $("providerReview").showModal();
   }
   $("providersOpen").addEventListener("click", run(async () => {
+    $("editingPanel").hidden = true;
+    $("editingOpen").setAttribute("aria-expanded", "false");
     panel.hidden = false;
     $("providersOpen").setAttribute("aria-expanded", "true");
     $("providersClose").focus();
@@ -193,14 +233,15 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
   panel.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } });
   $("providerSelect").addEventListener("change", updateCapabilities);
   $("providerResolution").addEventListener("change", updateDuration);
-  $("providerModel").addEventListener("change", updateQuote);
+  $("providerModel").addEventListener("change", updateModelCapabilities);
+  $("providerMode").addEventListener("change", () => { renderReferences(); updateQuote(); });
   $("providerSeconds").addEventListener("change", updateQuote);
   $("providerRefresh").addEventListener("click", run(refresh));
   $("providerPreview").addEventListener("click", run(async () => {
     await flush();
     const proposal = await postJson("/provider-jobs/preview", { provider: $("providerSelect").value, model: $("providerModel").value,
       resolution: $("providerResolution").value, seconds: Number($("providerSeconds").value), prompt: $("providerPrompt").value,
-      project: state.folder, clip: state.clip, revision: state.project.revision });
+      project: state.folder, clip: state.clip, revision: state.project.revision, mode: $("providerMode").value || "text", references: [...referenceSelections.values()] });
     openReview(proposal, proposal.cost_notice, true);
   }));
   $("providerReviewClose").addEventListener("click", () => $("providerReview").close());
@@ -233,7 +274,7 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
   $("voicePreview").addEventListener("click", run(async () => {
     await flush();
     const text = $("voiceTranscript").value.trim();
-    if (!text) throw new Error("请先输入或粘贴镜头文字。自动转写尚不可用。");
+    if (!text) throw new Error("请先输入、粘贴或本地转写镜头文字。");
     const proposal = await bridge("propose_ops", { project: state.folder, revision: state.project.revision,
       ops: [{ op: "add_clip", fields: { action: text, seconds: 4 } }] });
     openReview(proposal, "此操作仅新增一个未渲染的 4 秒镜头，不渲染、不发送音频，也不产生供应商费用。", true);
@@ -252,6 +293,7 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     stopTracks();
     if (recordingURL) URL.revokeObjectURL(recordingURL);
     recordingURL = null;
+    recordingBlob = null;
     $("voicePlayback").pause();
     $("voicePlayback").removeAttribute("src");
     $("voicePlayback").hidden = true;
@@ -266,7 +308,15 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
     const epoch = recordingEpoch;
     $("voiceRecord").disabled = true;
     try {
-      const granted = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const pending = navigator.mediaDevices.getUserMedia({ audio: true });
+      // Some embedded browsers leave permission requests unresolved. A late grant
+      // must not keep a microphone alive after timeout, panel close or discard.
+      pending.then(late => { if (epoch !== recordingEpoch || panel.hidden) late.getTracks().forEach(track => track.stop()); }).catch(() => {});
+      let permissionTimer;
+      let granted;
+      try {
+        granted = await Promise.race([pending, new Promise((_, reject) => { permissionTimer = setTimeout(() => reject(new Error('permission timeout')), 15000); })]);
+      } finally { clearTimeout(permissionTimer); }
       if (panel.hidden || epoch !== recordingEpoch) { granted.getTracks().forEach((track) => track.stop()); return; }
       stream = granted;
       recorder = new MediaRecorder(stream);
@@ -283,6 +333,7 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
         stopTracks();
         if (bytes > 8 * 1024 * 1024) { discardRecording(); error("录音超过本地大小上限，已丢弃。"); return; }
         const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+        recordingBlob = blob;
         recordingURL = URL.createObjectURL(blob);
         $("voicePlayback").src = recordingURL;
         $("voicePlayback").hidden = false;
@@ -291,12 +342,13 @@ export function installProviderPanel({ state, api, postJson, toast, adopt, flush
       });
       recorder.start(250);
       $("voiceStop").disabled = false;
-      $("voiceStatus").textContent = "正在本地录音，30 秒后自动停止。";
-      recordingTimer = setTimeout(() => { if (recorder?.state === "recording") recorder.stop(); stopTracks(); }, 30000);
+      $("voiceStatus").textContent = "正在本地录音，10 秒后自动停止。";
+      recordingTimer = setTimeout(() => { if (recorder?.state === "recording") recorder.stop(); stopTracks(); }, 10000);
     } catch (_) {
-      stopTracks();
-      throw new Error("麦克风权限被拒绝或设备不可用。可以直接输入镜头文字。");
+      discardRecording();
+      throw new Error("麦克风授权未完成、被拒绝或设备不可用。请检查浏览器与 Windows 麦克风权限，也可直接输入镜头文字。");
     }
   }));
   window.addEventListener("pagehide", discardRecording);
+  return { review: openReview, recording: () => recordingBlob, generation: () => ({ provider: $("providerSelect").value, model: $("providerModel").value, resolution: $("providerResolution").value, seconds: Number($("providerSeconds").value), prompt: $("providerPrompt").value, mode: $("providerMode").value || "text", references: [...referenceSelections.values()] }) };
 }

@@ -1,6 +1,6 @@
 """Durable provider jobs. Network calls never run under the database lock.
 
-Modified 2026-11-17 for the Windows provider fork (GPL-3.0).
+Modified 2026-11-17 and 2026-11-18 for the Windows provider fork (GPL-3.0).
 Only the simulation is enabled without explicit server configuration. Prompts,
 credentials, provider errors and signed result URLs are never persisted.
 """
@@ -35,6 +35,8 @@ class Capabilities:
     protocol: str = "simulation-v1"
     poll_seconds: int = 0
     live_verified: bool = False
+    modes: tuple = ("text",)
+    cancellation_scope: str = "none"
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,9 @@ class Generation:
     seconds: int
     model: str
     resolution: str
+    mode: str = "text"
+    media: tuple = ()
+    ratio: str = "16:9"
 
 
 @dataclass(frozen=True)
@@ -100,12 +105,21 @@ class JobManager:
     active slot and budget: stopping our wait does not cancel external billing.
     """
     def __init__(self, adapters=None, max_jobs=1000, max_active=2, db_path=":memory:",
-                 per_user_active=2, daily_jobs=20, budget_cents=0, timeout=1800, clock=time.time):
+                 per_user_active=2, daily_jobs=20, budget_cents=0, timeout=1800, clock=time.time, currency="USD"):
+        if currency not in ('USD','CNY'): raise JobError('unsupported reservation currency')
+        self.currency=currency
         self._adapters = dict(adapters if adapters is not None else {"simulation": SimulatedAdapter()})
         self._lock, self._flight = RLock(), {}
         self._db = sqlite3.connect(str(db_path), check_same_thread=False, timeout=10)
         self._db.execute("PRAGMA journal_mode=DELETE")
         self._db.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, owner TEXT NOT NULL, idem TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(owner, idem))")
+        self._db.execute("CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        previous=self._db.execute("SELECT value FROM settings WHERE name='currency'").fetchone()
+        if (previous[0] if previous else 'USD')!=currency and any(j['reserved_cents'] for j in self._all()):
+            self._db.close()
+            raise JobError('cannot reinterpret an existing charged ledger in another currency')
+        self._db.execute("INSERT OR REPLACE INTO settings VALUES ('currency',?)",(currency,))
+        self._db.commit()
         self._max_jobs, self._max_active = max_jobs, max_active
         self._per_user_active, self._daily_jobs = per_user_active, daily_jobs
         self._budget_cents, self._timeout, self._clock = budget_cents, timeout, clock
@@ -121,7 +135,8 @@ class JobManager:
 
     def capabilities(self):
         return {name: dict(asdict(a.capabilities), configured=bool(a.configured), enabled=bool(a.enabled),
-                           estimate_cents=a.price_cents, quotes_cents=getattr(a, "quotes_cents", {}),
+                           estimate_cents=a.price_cents, quotes_cents=getattr(a, "quotes_cents", {}), quote_currency=self.currency,
+                           model_capabilities=getattr(a, "model_capabilities", {}),
                            available=bool(a.configured and a.enabled and (a.capabilities.simulated or
                                any(type(v) is int and 0 < v <= self._budget_cents for v in
                                    list(getattr(a, "quotes_cents", {}).values()) + [a.price_cents]))),
@@ -129,7 +144,7 @@ class JobManager:
                            status="simulation" if a.capabilities.simulated else "implemented; live API unverified")
                 for name, a in self._adapters.items()}
 
-    def validate(self, provider, prompt, seconds, model=None, resolution=None):
+    def validate(self, provider, prompt, seconds, model=None, resolution=None, *, mode="text", media=(), ratio="16:9"):
         if not isinstance(provider, str) or provider not in self._adapters:
             raise JobError("unknown provider")
         adapter = self._adapters[provider]
@@ -141,7 +156,13 @@ class JobManager:
         model, resolution = model or cap.models[0], resolution or cap.resolutions[0]
         if model not in cap.models or resolution not in cap.resolutions:
             raise JobError("unsupported model or resolution")
-        request = Generation(prompt, seconds, model, resolution)
+        if mode not in cap.modes or ratio not in ("16:9", "9:16", "1:1", "adaptive"):
+            raise JobError("unsupported generation mode or aspect ratio")
+        if not isinstance(media, (list, tuple)) or len(media) > 4:
+            raise JobError("at most four reviewed images are supported")
+        if mode == 'text' and media:
+            raise JobError('text-only generation cannot include images')
+        request = Generation(prompt, seconds, model, resolution, mode, tuple(media), ratio)
         adapter.validate(request)
         if not adapter.enabled or not adapter.configured:
             raise JobError("provider disabled or credential not configured", "unavailable", 409)
@@ -151,9 +172,9 @@ class JobManager:
         return adapter, request
 
     def submit(self, provider, prompt, seconds, *, model=None, resolution=None, cost_acknowledged=False,
-               owner="local", idempotency_key=None, project="", clip=""):
+               owner="local", idempotency_key=None, project="", clip="", mode="text", media=(), ratio="16:9"):
         identifier(owner, "connection identity")
-        adapter, request = self.validate(provider, prompt, seconds, model, resolution)
+        adapter, request = self.validate(provider, prompt, seconds, model, resolution, mode=mode, media=media, ratio=ratio)
         if cost_acknowledged is not True:
             raise JobError("acknowledge the provider cost notice first", "confirmation_required", 409)
         if project:
@@ -183,6 +204,7 @@ class JobManager:
                 raise JobError("configured lifetime reservation budget reached", "budget", 429)
             job = dict(id=uuid4().hex, owner=owner, provider=provider, model=request.model,
                        resolution=request.resolution, seconds=seconds, project=project, clip=clip,
+                       mode=mode, reference_count=len(media), ratio=ratio, currency=self.currency,
                        state="submitting", created=self._clock(), updated=self._clock(),
                        reserved_cents=price, simulated=adapter.capabilities.simulated,
                        has_output=False, staged=False, notice="", _handle="", _file_id="",
@@ -230,7 +252,7 @@ class JobManager:
             reserved = sum(j["reserved_cents"] for j in rows)
             today = int(self._clock() // 86400)
             return {"budget_cents": self._budget_cents, "reserved_cents": reserved,
-                    "remaining_cents": max(0, self._budget_cents - reserved),
+                    "remaining_cents": max(0, self._budget_cents - reserved), "currency": self.currency,
                     "active": sum(j["state"] in ACTIVE for j in rows), "max_active": self._max_active,
                     "connection_active": sum(j["state"] in ACTIVE and j["owner"] == owner for j in rows),
                     "connection_max_active": self._per_user_active,

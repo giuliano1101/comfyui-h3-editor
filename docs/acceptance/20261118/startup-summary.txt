@@ -1,0 +1,5 @@
+[INFO]    0.0 seconds: G:\Codex\AgentClipsDesk\comfyui-h3-editor\.acceptance\ComfyUI\custom_nodes\websocket_image_save.py
+[INFO]    0.0 seconds: G:\Codex\AgentClipsDesk\comfyui-h3-editor\.acceptance\ComfyUI\custom_nodes\ComfyUI-GGUF
+[INFO]    0.3 seconds: G:\Codex\AgentClipsDesk\comfyui-h3-editor\.acceptance\ComfyUI\custom_nodes\comfyui-h3-editor
+[INFO] Starting server
+[INFO] To see the GUI go to: http://127.0.0.1:8190

@@ -29,6 +29,7 @@
       <button id="projectDelete" role="menuitem"><b>删除</b><span>将项目移入回收站文件夹</span></button>
     </div>
     <button id="newProject" class="quiet">新建项目</button>
+    <button id="editingOpen" class="quiet" aria-expanded="false">剪辑工具</button>
     <span class="release" title="当前 H3 编辑器版本">H3 编辑器 __RELEASE__</span>
     <div class="spacer"></div>
     <button id="checks" class="checks-chip" aria-haspopup="true" popovertarget="checksPanel" hidden></button>
@@ -301,6 +302,8 @@
       <label class="provider-field">服务商<select id="providerSelect"></select></label>
       <p id="providerStatus" class="hint"></p>
       <div class="provider-fields"><label class="provider-field">模型<select id="providerModel"></select></label><label class="provider-field">分辨率<select id="providerResolution"></select></label><label class="provider-field">时长（秒）<select id="providerSeconds"></select></label></div>
+      <label class="provider-field">生成能力<select id="providerMode"></select></label>
+      <div id="providerReferences"></div><p id="providerCapabilityNote" class="hint"></p>
       <label class="provider-field">画面描述<textarea id="providerPrompt" rows="4" maxlength="2000"></textarea></label>
       <p id="providerCost" class="hint"></p>
       <p id="providerLimits" class="hint"></p>
@@ -308,12 +311,39 @@
     </section>
     <section aria-labelledby="providerJobsTitle"><div class="providers-head"><h3 id="providerJobsTitle">本项目任务</h3><button id="providerRefresh" class="quiet">刷新</button></div><div id="providerJobs" aria-live="polite"></div></section>
     <section aria-labelledby="providerApprovalTitle"><h3 id="providerApprovalTitle">Agent 请求</h3><p class="hint">Agent 默认只读。服务器允许编辑后，每次修改仍需在此批准，请求在五分钟后过期。</p><div id="providerApprovals"></div></section>
-    <section aria-labelledby="providerVoiceTitle"><h3 id="providerVoiceTitle">语音笔记</h3>
-      <p class="hint">可选的本地录音，最长 30 秒。录音仅保留在当前标签页，关闭此面板即丢弃，不会上传。语音聊天和自动转写尚不可用。</p>
+    <section aria-labelledby="providerVoiceTitle"><h3 id="providerVoiceTitle">语音与对话剪辑</h3>
+      <p class="hint">麦克风录音最长 10 秒；上传音频最长 30 秒、8 MiB。点击本地转写后，音频仅发送到本机转写进程，正常完成或取消后删除临时文件，不发送云端。对话保留在本页，待审批内容在本机内存最多五分钟，确认的修改进入项目历史。本地模型的内存缓存保留至覆盖或退出。</p>
       <div class="provider-actions"><button id="voiceRecord" class="quiet">授权麦克风并录音</button><button id="voiceStop" class="quiet" disabled>停止</button><button id="voiceDiscard" class="quiet" disabled>丢弃</button></div>
       <p id="voiceStatus" role="status">麦克风已关闭。</p><audio id="voicePlayback" controls hidden></audio>
+      <label class="provider-check"><input id="voiceConsent" type="checkbox">同意仅向本机转写器发送本次音频</label>
+      <div class="provider-actions"><button id="voiceTranscribe" class="quiet">本地转写</button><label class="quiet">选择音频<input id="voiceFile" type="file" accept="audio/*"></label><button id="voiceCaption" class="quiet" disabled>转写为字幕预览</button></div>
       <label class="provider-field">镜头文字（输入或粘贴转写稿）<textarea id="voiceTranscript" rows="3" maxlength="2000"></textarea></label>
-      <button id="voicePreview" class="quiet">预览为新镜头</button>
+      <p id="chatBackend" class="hint"></p><div id="chatMessages" role="log" aria-live="polite"></div>
+      <div class="provider-actions"><button id="chatSend" class="quiet">预览剪辑指令</button><button id="chatCancel" class="quiet">取消当前处理或草稿</button><button id="voicePreview" class="quiet">直接预览为新镜头</button></div>
+      <label class="provider-check"><input id="chatSpeak" type="checkbox">使用本机离线语音朗读回复</label>
+      <p class="hint">支持镜头增删改、字幕改字、音轨移动和音量、分割、撤销、生成预览及本地渲染取消。对象不明时会询问；不会自动执行。纠错可直接描述“不是…，改为…”，旧草稿会失效。</p>
+    </section>
+  </div>
+</aside>
+<aside id="editingPanel" class="providers-panel" aria-labelledby="editingTitle" hidden>
+  <div class="providers-head"><h2 id="editingTitle">剪辑工具</h2><button id="editingClose" class="quiet">关闭</button></div>
+  <div class="providers-body">
+    <p id="editingError" role="alert" hidden></p>
+    <section><h3>字幕时间码</h3><p class="hint">SRT / WebVTT 导入现有项目。字幕按 24 fps 时间线预览，并在导出时烧录；不会修改原始素材。</p>
+      <label class="provider-field">字幕文件<input id="subtitleFile" type="file" accept=".srt,.vtt,text/plain,text/vtt"></label>
+      <label class="provider-field">字幕内容<textarea id="subtitleText" rows="5" maxlength="500000" placeholder="粘贴 SRT 或 WebVTT 时间码与字幕"></textarea></label>
+      <label class="provider-field">格式<select id="subtitleFormat"><option value="srt">SRT</option><option value="vtt">WebVTT</option></select></label>
+      <label class="provider-check"><input id="subtitleReplace" type="checkbox">替换现有字幕（可从项目历史恢复）</label>
+      <button id="subtitleImport" class="quiet">预览导入</button><button id="subtitleRefresh" class="quiet">刷新列表</button>
+      <div id="subtitleRows"></div>
+    </section>
+    <section><h3>音轨整理与同步</h3><p class="hint">整理仅调整轨道，保留起点、裁切和音量。波形对齐比较前 10 秒、最多偏移 2 秒；不等于口型检测，低相似度时不移动。</p>
+      <label class="provider-field">参考时间线片段<select id="audioSyncItem"></select></label>
+      <label class="provider-field">音频片段<select id="audioSyncSound"></select></label>
+      <div class="provider-actions"><button id="audioTidy" class="quiet">预览整理音轨</button><button id="audioSync" class="quiet">预览波形对齐</button><button id="audioMute" class="quiet">预览静音</button></div>
+    </section>
+    <section><h3>工程检查</h3><button id="projectHealth" class="quiet">检查缺失素材与特效</button><div id="projectHealthResult" role="status"></div>
+      <p class="hint">工程归档与恢复继续使用项目菜单中的“下载项目压缩包”和“打开项目压缩包”，字幕与音轨设置随工程保留。</p>
     </section>
   </div>
 </aside>

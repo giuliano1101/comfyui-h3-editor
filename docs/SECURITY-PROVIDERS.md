@@ -1,3 +1,11 @@
+# 2026-11-18 增补
+
+当前结果见 [完整验收矩阵](ACCEPTANCE-20261118.md) 与 [许可清单](LICENSE-REVIEW-20261118.md)；下面保留初始基础阶段自查。本轮新增 Ark v3、审核图片、CNY/USD 账本、读写分离令牌、五分钟提案内存过期、离线 ASR 和本地结构化对话。真实 API 仍未调用；已经取得单次 2 元纸船测试授权，缺 Key/账户报价。
+
+媒体输入现在限制 `file,pipe` 与明确的音视频/图片解复用器；实际 HLS 攻击 fixture 外部取片计数为 0。ASR 单并发、60 秒、单独音频同意、取消 kill 及正常临时文件清理已经实测。中文识别质量与麦克风仍未通过。原 VFX runtime 仍使用不带同源权限的 sandbox frame/worker 与 `connect-src 'none'`，MCP 不暴露 VFX 代码执行。
+
+密钥配置可用当前用户 DPAPI（可选），MCP 私有令牌文件已限制当前用户 ACL；没有对生产全目录或全部插件做独立安全审计。提案暂存内存最多五分钟；本地文本模型的 RAM/KV 缓存保留至覆盖或退出。异常断电/强杀可能留下系统临时音频，删除不等于安全擦除。真实服务没有零留存承诺。
+
 # Provider / MCP security review record
 
 2026-11-17. This is an implementation self-review and test record, **not an independent security sign-off**. Keep real services disabled until a separate reviewer and the owner approve the configuration and any paid test. No live provider call was made during development.

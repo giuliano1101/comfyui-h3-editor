@@ -79,18 +79,30 @@ export function uiMessage(value) {
   return text;
 }
 
+// Only apply this to the server-owned model diagnostic fields, never user prompts.
+export function modelNotice(value) {
+  const text = String(value ?? '');
+  let match = /^Finals stay at H3's own size, because (.+) is not installed in models\/latent_upscale_models\.$/.exec(text);
+  if (match) return `未安装 models/latent_upscale_models/${match[1]}，成片保持 H3 原始尺寸。`;
+  match = /^Finals render without the Realism Slider, because (.+) is not installed in models\/loras\.$/.exec(text);
+  if (match) return `未安装 models/loras/${match[1]}，成片不使用写实滑块。`;
+  match = /^No MiniMax H3 (.+) is installed\. Put (.+) in (.+)\.$/.exec(text);
+  if (match) return `未安装 MiniMax H3 ${({'text encoder':'文本编码器','video vae':'视频 VAE','audio vae':'音频 VAE'})[match[1]] || match[1]}。请将 ${match[2]} 放入 ${match[3]}。`;
+  return uiMessage(text);
+}
+
 export function providerName(value) {
-  return value === "simulation" ? "模拟服务" : value === "minimax" ? "MiniMax 官方" : String(value);
+  return value === "simulation" ? "模拟服务" : value === "minimax" ? "MiniMax 官方" : value === "seedance" ? "火山方舟 Seedance" : String(value);
 }
 
 export function operationName(value) {
   return ({ add_clip: "新建镜头", update_clip: "修改镜头", set_project: "修改项目设置", update_item: "调整时间线片段",
     split_item: "分割片段", remove_item: "移除时间线片段", remove_clip: "删除镜头", place_clip: "放置镜头",
-    choose_take: "选择素材版本", update_sound: "调整音频" })[value] || value;
+    choose_take: "选择素材版本", update_sound: "调整音频", add_subtitle: "添加字幕", update_subtitle: "修改字幕", remove_subtitle: "删除字幕" })[value] || value;
 }
 
 export function fieldName(value) {
   return ({ name: "名称", action: "画面描述", camera: "运镜", dialogue: "台词", sound: "声音", seconds: "时长",
     clip: "镜头 ID", item: "片段 ID", job: "任务 ID", take: "素材版本 ID", start: "起始帧", in: "入点帧", out: "出点帧",
-    frame: "帧", speed: "速度", transition: "转场", gain: "音量", lane: "轨道", target_revision: "要恢复的版本", as: "批次内引用名" })[value] || value;
+    frame: "帧", end: "结束帧", text: "字幕文字", subtitle: "字幕 ID", offset: "源音频偏移（秒）", frames: "帧数", quality: "画质", speed: "速度", transition: "转场", gain: "音量", lane: "轨道", target_revision: "要恢复的版本", as: "批次内引用名" })[value] || value;
 }

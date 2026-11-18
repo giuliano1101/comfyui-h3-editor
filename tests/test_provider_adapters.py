@@ -20,7 +20,8 @@ class AdapterTest(unittest.TestCase):
         self.assertTrue(adapters["simulation"].capabilities.cancellation)
         self.assertFalse(adapters["minimax"].enabled)
         self.assertFalse(adapters["minimax"].capabilities.cancellation)
-        self.assertNotIn("image", adapters["minimax"].capabilities.inputs)
+        self.assertIn("image", adapters["minimax"].capabilities.inputs)
+        self.assertNotIn("reference", adapters["minimax"].capabilities.modes)
         self.assertFalse(adapters["minimax"].capabilities.live_verified)
 
     @mock.patch.dict(os.environ, {"MINIMAX_API_KEY": "test-credential"})

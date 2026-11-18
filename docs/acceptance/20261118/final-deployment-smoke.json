@@ -1,0 +1,106 @@
+{
+  "environment": "final real isolated ComfyUI",
+  "comfyui_version": "0.45.0",
+  "real_providers": {
+    "minimax": {
+      "enabled": false,
+      "configured": false,
+      "quote_currency": "CNY"
+    },
+    "seedance": {
+      "enabled": false,
+      "configured": false,
+      "quote_currency": "CNY"
+    }
+  },
+  "parallel_exports": [
+    {
+      "filename": "最终隔离验收_003.mp4",
+      "subfolder": "h3take_projects/H3_综合验收_20261118_2/exports",
+      "bytes": 590045,
+      "plan": {
+        "width": 640,
+        "height": 352,
+        "frames": 89,
+        "seconds": 3.71,
+        "clips": 2,
+        "drafts": 0,
+        "missing": 0,
+        "gaps": 0,
+        "effects": 0,
+        "effects_missing": 0,
+        "effects_stale": 0
+      },
+      "decoded_frames": 89,
+      "audio_streams": 1
+    },
+    {
+      "filename": "最终隔离验收_004.mp4",
+      "subfolder": "h3take_projects/H3_综合验收_20261118_2/exports",
+      "bytes": 590045,
+      "plan": {
+        "width": 640,
+        "height": 352,
+        "frames": 89,
+        "seconds": 3.71,
+        "clips": 2,
+        "drafts": 0,
+        "missing": 0,
+        "gaps": 0,
+        "effects": 0,
+        "effects_missing": 0,
+        "effects_stale": 0
+      },
+      "decoded_frames": 89,
+      "audio_streams": 1
+    }
+  ],
+  "distinct_export_filenames": true,
+  "explicit_duration_preview": {
+    "draft": {
+      "intent": "generate_remote",
+      "target": "ccdf83a94",
+      "name": "",
+      "text": "",
+      "seconds": 4,
+      "frames": 96,
+      "gain": 1,
+      "quality": "draft",
+      "message": "为当前镜头'清晨片段'使用所选供应商生成4秒视频的费用预览，仅做预估，不执行渲染。"
+    },
+    "seconds": 4,
+    "simulated": true,
+    "executed": false,
+    "job_count_unchanged": true
+  },
+  "synthetic_webm_transcription": {
+    "text": "天家一個鏡頭,名稱是指傳",
+    "segments": [
+      {
+        "start": 0.0,
+        "end": 3.58,
+        "text": "天家一個鏡頭,名稱是指傳"
+      }
+    ],
+    "language": "zh",
+    "seconds": 3.997,
+    "network": "local-only",
+    "audio_retained": false
+  },
+  "asr_quality": "not passed; synthetic speech still needs correction; not microphone",
+  "queue_running": 0,
+  "queue_pending": 0,
+  "usage": {
+    "budget_cents": 200,
+    "reserved_cents": 0,
+    "remaining_cents": 200,
+    "currency": "CNY",
+    "active": 0,
+    "max_active": 1,
+    "connection_active": 0,
+    "connection_max_active": 2,
+    "connection_today": 1,
+    "connection_daily_limit": 20
+  },
+  "passed": true
+}
