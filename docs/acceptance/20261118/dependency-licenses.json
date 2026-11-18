@@ -1,0 +1,289 @@
+[
+  {
+    "name": "ctranslate2",
+    "version": "4.9.0",
+    "license_expression": null,
+    "legacy_license": "MIT",
+    "license_classifiers": []
+  },
+  {
+    "name": "faster-whisper",
+    "version": "1.2.1",
+    "license_expression": null,
+    "legacy_license": "MIT",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "onnxruntime",
+    "version": "1.32.0",
+    "license_expression": null,
+    "legacy_license": "MIT License",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "annotated-types",
+    "version": "0.8.0",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "anyio",
+    "version": "4.16.0",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "attrs",
+    "version": "26.1.0",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "cffi",
+    "version": "2.1.1",
+    "license_expression": "MIT-0",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "click",
+    "version": "8.5.1",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "cryptography",
+    "version": "50.0.2",
+    "license_expression": "Apache-2.0 OR BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "h11",
+    "version": "0.16.0",
+    "license_expression": null,
+    "legacy_license": "MIT",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "httpcore2",
+    "version": "2.16.2",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": [
+      "License :: OSI Approved :: BSD License"
+    ]
+  },
+  {
+    "name": "httpx2",
+    "version": "2.16.2",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": [
+      "License :: OSI Approved :: BSD License"
+    ]
+  },
+  {
+    "name": "idna",
+    "version": "3.20",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "jsonschema",
+    "version": "4.26.0",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "jsonschema-specifications",
+    "version": "2025.9.1",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "mcp",
+    "version": "2.3.0",
+    "license_expression": null,
+    "legacy_license": "MIT",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "mcp-types",
+    "version": "2.3.0",
+    "license_expression": null,
+    "legacy_license": "MIT",
+    "license_classifiers": [
+      "License :: OSI Approved :: MIT License"
+    ]
+  },
+  {
+    "name": "opentelemetry-api",
+    "version": "1.45.2",
+    "license_expression": "Apache-2.0",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "pycparser",
+    "version": "3.12",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "pydantic",
+    "version": "2.14.3",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "pydantic_core",
+    "version": "2.50.4",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "PyJWT",
+    "version": "2.15.1",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "python-multipart",
+    "version": "0.0.34",
+    "license_expression": "Apache-2.0",
+    "legacy_license": "not provided",
+    "license_classifiers": [
+      "License :: OSI Approved :: Apache Software License"
+    ]
+  },
+  {
+    "name": "pywin32",
+    "version": "312",
+    "license_expression": null,
+    "legacy_license": "PSF",
+    "license_classifiers": [
+      "License :: OSI Approved :: Python Software Foundation License"
+    ]
+  },
+  {
+    "name": "referencing",
+    "version": "0.37.0",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "rpds-py",
+    "version": "2026.9.1",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "sse-starlette",
+    "version": "3.7.0",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "starlette",
+    "version": "1.10.0",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "truststore",
+    "version": "0.10.5",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "typing_extensions",
+    "version": "4.16.0",
+    "license_expression": "PSF-2.0",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "typing-inspection",
+    "version": "0.4.5",
+    "license_expression": "MIT",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "uvicorn",
+    "version": "0.54.0",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided",
+    "license_classifiers": []
+  },
+  {
+    "name": "aiohttp",
+    "version": "3.14.3",
+    "license_expression": null,
+    "legacy_license": "Apache-2.0 AND MIT"
+  },
+  {
+    "name": "numpy",
+    "version": "2.5.2",
+    "license_expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+    "legacy_license": "not provided"
+  },
+  {
+    "name": "Pillow",
+    "version": "12.3.0",
+    "license_expression": "MIT-CMU",
+    "legacy_license": "not provided"
+  },
+  {
+    "name": "av",
+    "version": "18.1.0",
+    "license_expression": "BSD-3-Clause",
+    "legacy_license": "not provided"
+  },
+  {
+    "name": "torch",
+    "version": "2.13.0+cu130",
+    "license_expression": "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT",
+    "legacy_license": "not provided"
+  },
+  {
+    "name": "imageio-ffmpeg",
+    "version": "0.6.0",
+    "license_expression": null,
+    "legacy_license": "BSD-2-Clause"
+  },
+  {
+    "name": "gguf",
+    "version": "0.19.0",
+    "license_expression": null,
+    "legacy_license": "not provided",
+    "installed_license_file": "MIT; verified gguf-0.19.0.dist-info/licenses/LICENSE"
+  }
+]

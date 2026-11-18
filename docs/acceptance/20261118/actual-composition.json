@@ -1,0 +1,67 @@
+{
+  "environment": "real isolated ComfyUI",
+  "project": "H3_综合验收_20261118_2",
+  "export": {
+    "filename": "分割叠化字幕验收_001.mp4",
+    "subfolder": "h3take_projects/H3_综合验收_20261118_2/exports",
+    "bytes": 590045,
+    "plan": {
+      "width": 640,
+      "height": 352,
+      "frames": 89,
+      "seconds": 3.71,
+      "clips": 2,
+      "drafts": 0,
+      "missing": 0,
+      "gaps": 0,
+      "effects": 0,
+      "effects_missing": 0,
+      "effects_stale": 0
+    }
+  },
+  "decoded": {
+    "frames": 89,
+    "width": 640,
+    "height": 352,
+    "audio_streams": 1
+  },
+  "timeline": [
+    {
+      "id": "i1115403f",
+      "clip": "ccdf83a94",
+      "start": 0,
+      "in": 0,
+      "out": 48
+    },
+    {
+      "id": "i36dfed14",
+      "clip": "ccdf83a94",
+      "start": 42,
+      "in": 48,
+      "out": 95,
+      "transition": {
+        "type": "dissolve",
+        "frames": 6
+      }
+    }
+  ],
+  "subtitles": 2,
+  "missing_effect": {
+    "health": {
+      "revision": 4,
+      "missing": [
+        {
+          "kind": "effects",
+          "id": "x833896b6",
+          "name": "未生成的验收特效",
+          "reason": "未生成素材"
+        }
+      ],
+      "export_ready": false,
+      "notice": "缺失音频或特效时阻止导出，请恢复素材或明确移除对应条目后重试。未使用的镜头缺少素材不影响已完整的时间线。"
+    },
+    "export_status": 409,
+    "passed": true
+  },
+  "original_project_unchanged": true
+}

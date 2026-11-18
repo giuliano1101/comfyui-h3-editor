@@ -12,10 +12,18 @@ const clientId = (() => {
     return "h3editor-" + Math.random().toString(36).slice(2);
   }
 })();
-const STAGES = { 10: "Reading the prompt", 15: "Sampling", 16: "Decoding the picture", 17: "Decoding the sound", 18: "Assembling", 19: "Saving" };
+const STAGES = { 10: "正在解析提示词", 15: "正在采样", 16: "正在解码画面", 17: "正在解码音频", 18: "正在合成", 19: "正在保存" };
 
 import { VfxRuntime } from "./vfx-runtime.js";
 import * as writer from "./writer.js";
+import { installProviderPanel } from "./providers.js";
+import { installEditingPanel } from "./editing-panel.js";
+import { installConversation } from "./conversation-panel.js";
+import { uiMessage, modelNotice } from "./ui-zh.js";
+
+const editorSession = fetch("/h3take/api/session", { headers: { "X-H3-Editor": "1" } }).then((response) => {
+  if (!response.ok) throw new Error("无法建立本机编辑器会话。请使用 localhost 地址并刷新页面。");
+});
 
 const state = {
   folder: null,
@@ -94,6 +102,7 @@ function timecode(frames) {
 
 // Messages stack, newest at the bottom, and each one can be closed. `action` adds a button, such as Undo.
 function toast(message, bad = false, action = null) {
+  message = uiMessage(message);
   const stack = $("toast");
   const el = document.createElement("div");
   el.className = "toast" + (bad ? " bad" : "");
@@ -118,7 +127,7 @@ function toast(message, bad = false, action = null) {
   }
   const dismiss = document.createElement("button");
   dismiss.className = "toast-close";
-  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.setAttribute("aria-label", "关闭提示");
   dismiss.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
   dismiss.addEventListener("click", close);
   el.append(dismiss);
@@ -135,15 +144,19 @@ function toast(message, bad = false, action = null) {
   wait();
 }
 
-const undoAction = { label: "Undo", run: () => restore(undo, redo) };
+const undoAction = { label: "撤销", run: () => restore(undo, redo) };
 
 async function api(path, options) {
-  const response = await fetch("/h3take/api" + path, options);
+  await editorSession;
+  const headers = new Headers(options?.headers);
+  headers.set("X-H3-Editor", "1");
+  const response = await fetch("/h3take/api" + path, { ...options, headers });
   if (!response.ok) {
+    if (response.status === 401) throw new Error('编辑器会话已失效。请保留未保存文字，核对已提交任务后刷新页面。');
     const text = await response.text();
     let message = text;
     try { message = JSON.parse(text).error || text; } catch (_) {}
-    throw new Error(message || "The request failed.");
+    throw new Error(message || "请求失败。");
   }
   return response.json();
 }
@@ -206,7 +219,7 @@ function adopt(project, { external = false } = {}) {
     if (state.jobs.has(id)) continue;
     const clip = clipOf(job.clip);
     if (!clip) continue;
-    if (clip.takes.some((t) => t.id === job.take)) toast(clip.name + " is ready.");
+    if (clip.takes.some((t) => t.id === job.take)) toast(clip.name + "已就绪。");
     else if (clip.error && !job.reported) toast(clip.name + ": " + clip.error, true);
   }
   renderAll();
@@ -258,7 +271,7 @@ function settle(moved) {
 function addClip() {
   checkpoint();
   const number = state.project.clips.length + 1;
-  const clip = { id: uid("c"), name: "Clip " + number, action: "", camera: "", speaker: "", dialogue: "", sound: "", music: "", seconds: 5, takes: [], active: null };
+  const clip = { id: uid("c"), name: "镜头 " + number, action: "", camera: "", speaker: "", dialogue: "", sound: "", music: "", seconds: 5, takes: [], active: null };
   const bin = selectedBin();
   if (bin) clip.bin = bin.id;
   state.project.clips.push(clip);
@@ -367,7 +380,7 @@ function slipSelected(frames) {
   const room = item && takeRoom(item);
   if (!room) return;
   if (!room.before && !room.after) {
-    toast("This clip already shows its whole take, so there is nothing to slip.");
+    toast("此片段已使用整个素材版本，无法继续滑移。");
     return;
   }
   checkpoint();
@@ -456,14 +469,14 @@ function shiftFrom(frame, by, skip = null) {
 function continuedTrack(source, item, mode, frames, out = item.out) {
   if (!source.track) return null;
   if (speedOf(item) !== 1) {
-    toast("Set " + source.name + " to 100% speed to continue its track.", true);
+    toast("请将 " + source.name + " 的速度设为 100%，以延续其音轨。", true);
     return false;
   }
   const from = mode === "extend_before"
     ? source.track.from + (item.in - (frames - HOLD)) / FPS
     : source.track.from + (out - HOLD) / FPS;
   if (from < -1e-6) {
-    toast("The track starts " + (-from).toFixed(2) + " s too late for this extension.", true);
+    toast("音轨起点晚了 " + (-from).toFixed(2) + " 秒，无法用于此次延伸。", true);
     return false;
   }
   return { ...source.track, from: Math.round(Math.max(0, from) * 1e6) / 1e6 };
@@ -538,7 +551,7 @@ function addLinked(mode, arrive = "short") {
   checkpoint();
   joinSide(link, "a", item);
   if (mode === "bridge") joinSide(link, "b", next);
-  const titles = { extend_after: "After ", extend_before: "Before ", bridge: "Bridge from " };
+  const titles = { extend_after: "后接 ", extend_before: "前接 ", bridge: "桥接自 " };
   const clip = {
     id: uid("c"), name: titles[mode] + source.name, action: "", camera: "", speaker: "", dialogue: "",
     sound: "", music: "", seconds, takes: [], active: null, link,
@@ -586,13 +599,13 @@ async function importFootage() {
   form.append("client", clientId);
   const bin = selectedBin();
   if (bin) form.append("bin", bin.id);
-  toast("Importing " + file.name);
+  toast("正在导入 " + file.name);
   try {
     await flush();
     const result = await api("/project/" + state.folder + "/import", { method: "POST", body: form });
     if (!unsaved()) adopt(result.project);
     selectClip(result.clip, result.item);
-    toast(file.name + " is on the timeline.");
+    toast(file.name + "已加入时间线。");
   } catch (error) {
     toast(error.message, true);
   }
@@ -606,7 +619,7 @@ async function addVoiceMember() {
     const voice = await uploadPicture(file);
     checkpoint();
     state.project.cast = state.project.cast || [];
-    const person = { id: uid("p"), name: "Narrator" + (state.project.cast.some((p) => p.name === "Narrator") ? " " + (state.project.cast.length + 1) : ""), description: "", voice };
+    const person = { id: uid("p"), name: "旁白" + (state.project.cast.some((p) => p.name === "旁白") ? " " + (state.project.cast.length + 1) : ""), description: "", voice };
     state.project.cast.push(person);
     state.person = person.id;
     state.clip = null;
@@ -630,13 +643,13 @@ async function grabVoice(person) {
   const item = itemAt(state.playhead);
   const take = activeTake(clipOf(item?.clip));
   if (!take) {
-    toast("Move the playhead over a clip where they speak, then press Use the clip under the playhead.");
+    toast("请将播放头移到有该角色说话的片段上，再点击“使用播放头下的片段”。");
     return;
   }
   try {
     const last = Math.min(item.out, item.in + 30 * FPS);
     setVoice(person, await postJson("/project/" + state.folder + "/grab_sound", { file: take.file, subfolder: take.subfolder, first: item.in, last }));
-    toast(person.name + " now speaks with the voice from " + clipOf(item.clip).name + ".");
+    toast(person.name + "的声音已替换为来自 " + clipOf(item.clip).name + ".");
   } catch (error) {
     toast(error.message, true);
   }
@@ -662,18 +675,18 @@ function trackSection(clip) {
     player.controls = true;
     player.preload = "none";
     player.src = assetUrl(clip.track) + "#t=" + clip.track.from;
-    box.append(player, field("Starts this many seconds into the track", clip.track.from, (v) => {
+    box.append(player, field("从音轨的第几秒开始", clip.track.from, (v) => {
       if (Number(v) >= 0) clip.track.from = Number(v);
     }, { type: "number" }));
-    button("Remove track", () => {
+    button("移除音轨", () => {
       checkpoint();
       delete clip.track;
       save();
       renderInspector();
     });
-    hint.textContent = "The picture is made to this sound, and the take keeps it exactly. Extend forward to carry on with the next part of the track.";
+    hint.textContent = "画面将根据此音频生成，素材版本会完整保留音频。向后延伸可接续音轨的下一段。";
   } else {
-    button("Use a sound file", async () => {
+    button("选择音频文件", async () => {
       const file = await pickFile($("voiceFile"));
       if (!file) return;
       try {
@@ -686,7 +699,7 @@ function trackSection(clip) {
         toast(error.message, true);
       }
     });
-    hint.textContent = "Hold a recorded track, such as a narration, and the picture is made to it, lips and all.";
+    hint.textContent = "使用录好的旁白等音轨，让画面和口型匹配音频。";
   }
   box.append(ways, hint);
   return [box];
@@ -710,9 +723,9 @@ function voiceSection(person) {
     player.preload = "none";
     player.src = assetUrl(person.voice);
     box.append(player);
-    if (person.file) button("Remove voice", () => setVoice(person, null));
+    if (person.file) button("移除声音", () => setVoice(person, null));
   }
-  button(person.voice ? "Replace with a file" : "Upload a voice", async () => {
+  button(person.voice ? "用文件替换" : "上传声音", async () => {
     const file = await pickFile($("voiceFile"));
     if (!file) return;
     try {
@@ -721,12 +734,12 @@ function voiceSection(person) {
       toast(error.message, true);
     }
   });
-  button("Use the clip under the playhead", () => grabVoice(person));
+  button("使用播放头下的片段", () => grabVoice(person));
   const hint = document.createElement("p");
   hint.className = "hint";
   hint.textContent = person.voice
-    ? "Write @" + person.name + " in Who speaks, and their lines use this voice. Up to 30 seconds of it is used."
-    : "Give " + person.name + " a voice so every line they say sounds like the same person.";
+    ? "在提示词中输入 @" + person.name + "，并在“说话角色”中使用其名称，即可使用此声音。最多使用其中 30 秒。"
+    : "为 " + person.name + "设置声音，让每句台词保持同一音色。";
   box.append(ways, hint);
   return box;
 }
@@ -746,7 +759,7 @@ async function addCastMember() {
     const asset = await uploadPicture(file);
     checkpoint();
     state.project.cast = state.project.cast || [];
-    const person = { id: uid("p"), name: "Person " + (state.project.cast.length + 1), description: "", ...asset };
+    const person = { id: uid("p"), name: "角色 " + (state.project.cast.length + 1), description: "", ...asset };
     state.project.cast.push(person);
     state.person = person.id;
     state.clip = null;
@@ -778,7 +791,7 @@ async function uploadFrame(clip, side) {
 
 // A place a picture file can be dropped on: it lights up while one is dragged over it, and hands the dropped
 // picture to take(file). Anything that is not a picture is turned away with a message.
-function dropTarget(element, take, what = "a picture") {
+function dropTarget(element, take, what = "一张图片") {
   const pictures = (event) => [...(event.dataTransfer?.items || [])].some((row) => row.kind === "file");
   let depth = 0;
   element.addEventListener("dragenter", (event) => {
@@ -803,7 +816,7 @@ function dropTarget(element, take, what = "a picture") {
     depth = 0;
     element.classList.remove("drop-hot");
     const file = [...event.dataTransfer.files].find((f) => /^image\/(png|jpeg|webp)$/.test(f.type));
-    if (!file) return toast("Drop " + what + ": a PNG, JPEG or WebP file.", true);
+    if (!file) return toast("拖入 " + what + "：PNG、JPEG 或 WebP 文件。", true);
     take(file);
   });
 }
@@ -814,7 +827,7 @@ async function grabFrame(clip, side) {
   const item = alone ? null : itemAt(state.playhead);
   const take = activeTake(alone || clipOf(item?.clip));
   if (!take) {
-    toast("Move the playhead over a rendered clip, then press Use playhead frame.");
+    toast("请将播放头移到已渲染片段上，再点击“使用当前帧”。");
     return;
   }
   try {
@@ -857,31 +870,31 @@ function frameSlot(clip, side, label) {
     image.alt = label;
     image.src = assetUrl(clip[side]);
     picture.append(image);
-    slot.title = "Drop a picture here to replace the " + label.toLowerCase();
-    ways.append(iconButton("close", "Remove the " + label.toLowerCase(), () => setClipFrame(clip, side, null)));
+    slot.title = "拖入图片以替换" + label.toLowerCase();
+    ways.append(iconButton("close", "移除" + label.toLowerCase(), () => setClipFrame(clip, side, null)));
   } else {
     picture.append(icon("picture"));
-    slot.title = "Drop a picture here to start or end the shot on it";
+    slot.title = "拖入图片，设置镜头的首帧或尾帧";
     ways.append(
-      iconButton("grab", "Use the frame at the playhead as the " + label.toLowerCase(), () => grabFrame(clip, side)),
-      iconButton("upload", "Upload a picture as the " + label.toLowerCase(), () => uploadFrame(clip, side)),
+      iconButton("grab", "使用播放头当前帧作为" + label.toLowerCase(), () => grabFrame(clip, side)),
+      iconButton("upload", "上传图片作为" + label.toLowerCase(), () => uploadFrame(clip, side)),
     );
   }
   dropTarget(slot, async (file) => {
     try {
       setClipFrame(clip, side, await uploadPicture(file));
-      toast(label + " of " + clip.name + " is " + file.name + ".");
+      toast(label + " / " + clip.name + "为" + file.name + ".");
     } catch (error) {
       toast(error.message, true);
     }
-  }, "a picture for the " + label.toLowerCase());
+  }, "用于以下位置的图片：" + label.toLowerCase());
   slot.append(picture, text);
   return slot;
 }
 
 function castPicker(clip) {
   const title = document.createElement("h3");
-  title.textContent = "Cast in this clip";
+  title.textContent = "此镜头的角色";
   const picks = document.createElement("div");
   picks.className = "picks";
   const pictured = state.project.cast.filter((p) => p.file || p.refmod);
@@ -912,7 +925,7 @@ function castPicker(clip) {
   }
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "Write @" + pictured[0].name + " in What happens to place them in the shot.";
+  hint.textContent = "在提示词中输入 @" + pictured[0].name + "，以将其放入画面。";
   return [title, picks, hint];
 }
 
@@ -920,7 +933,7 @@ function renderCast() {
   const list = $("cast");
   const cast = state.project.cast || [];
   if (!cast.length) {
-    list.innerHTML = '<p class="empty">Add a picture of a person or place to keep them the same across clips, or a voice for a narrator.</p>';
+    list.innerHTML = "<p class=\"empty\">添加人物或场景参考图，以保持各镜头一致；也可以添加旁白声音。</p>";
     list.style.display = "block";
     return;
   }
@@ -929,7 +942,7 @@ function renderCast() {
     const button = document.createElement("button");
     button.className = "person" + (person.id === state.person ? " on" : "") + (person.voice && person.file ? " voiced" : "");
     button.dataset.person = person.id;
-    if (person.voice) button.title = person.file ? person.name + " has a voice" : person.name + " is a voice";
+    if (person.voice) button.title = person.file ? person.name + "已设置声音" : person.name + "仅作为声音";
     let image;
     if (person.file) {
       image = document.createElement("img");
@@ -974,34 +987,34 @@ const CAST_PICTURES = 8;
 function refmodSection(person) {
   const current = person.refmod?.file || "";
   const known = state.refmods.files.includes(current);
-  const options = [["", "None"], ...state.refmods.files.map((name) => [name, name])];
-  if (current && !known) options.splice(1, 0, [current, current + " (not found)"]);
-  const pick = choice("RefMod file", options, current, (value) => {
+  const options = [["", "无"], ...state.refmods.files.map((name) => [name, name])];
+  if (current && !known) options.splice(1, 0, [current, current + "（未找到）"]);
+  const pick = choice("RefMod 文件", options, current, (value) => {
     if (value) person.refmod = { file: value, strength: person.refmod?.strength ?? 1 };
     else if (person.file || person.voice) delete person.refmod;
-    else toast(person.name + " is only a RefMod. Remove the cast member instead.", true);
+    else toast(person.name + "仅有 RefMod，请直接移除该角色。", true);
     renderCast();
   });
   const parts = [pick];
   if (person.refmod) {
     const strength = typeof person.refmod.strength === "number" ? person.refmod.strength : 1;
-    parts.push(strengthSlider("RefMod strength", person.name + " RefMod strength", strength, [0, 1], 1,
+    parts.push(strengthSlider("RefMod 强度", person.name + "的 RefMod 强度", strength, [0, 1], 1,
       (v) => { if (person.refmod) person.refmod.strength = v; }));
   }
   const hint = document.createElement("p");
   hint.className = "hint";
-  if (!state.refmods.installed) hint.textContent = "Renders leave this RefMod out: the ComfyUI-MiniMaxH3Mod pack is not installed.";
-  else if (current && !known) hint.textContent = "Renders leave it out until " + current + " is in models/refmods.";
-  else if (!state.refmods.files.length) hint.textContent = "No RefMods in models/refmods yet. Make one with the pack's Create H3 RefMod node.";
-  else if (person.refmod && !person.file) hint.textContent = "With no picture, shots render on the prompt-only model, so describe them above. A whole RefMod can make drafts several times slower.";
-  else hint.textContent = "A reference saved with the ComfyUI-MiniMaxH3Mod pack, added to every shot with " + person.name + ". A whole RefMod can make drafts several times slower.";
+  if (!state.refmods.installed) hint.textContent = "未安装 ComfyUI-MiniMaxH3Mod 插件，渲染时将忽略此 RefMod。";
+  else if (current && !known) hint.textContent = "暂不用于渲染，请先将 " + current + "放入 models/refmods。";
+  else if (!state.refmods.files.length) hint.textContent = "models/refmods 中暂无 RefMod。可使用该插件的 Create H3 RefMod 节点创建。";
+  else if (person.refmod && !person.file) hint.textContent = "没有参考图时将使用纯文本模型，请在上方描述角色。完整 RefMod 可能明显降低草稿生成速度。";
+  else hint.textContent = "使用 ComfyUI-MiniMaxH3Mod 保存的参考信息，将加入每个包含以下角色的镜头：" + person.name + "。完整 RefMod 可能明显降低草稿生成速度。";
   parts.push(hint);
   if (state.refmods.installed && person.file) {
     const making = current && !known;
     const make = document.createElement("button");
     make.className = "quiet wide";
     make.dataset.key = "Make a RefMod";
-    make.textContent = making ? "Making the RefMod" : person.refmod ? "Make it again from these pictures" : "Make a RefMod from these pictures";
+    make.textContent = making ? "正在制作 RefMod" : person.refmod ? "使用这些图片重新制作" : "使用这些图片制作 RefMod";
     make.disabled = making;
     make.addEventListener("click", () => makeRefmod(person));
     parts.push(make);
@@ -1023,7 +1036,7 @@ $("inspector").addEventListener("drop", (event) => {
     live.cast = [...(live.cast || []), id];
     save();
     renderInspector();
-    toast(person.name + " is now in the cast of " + live.name + ".");
+    toast(person.name + "已加入以下镜头的角色列表：" + live.name + ".");
   }, 0);
 });
 
@@ -1035,17 +1048,17 @@ async function makeRefmod(person) {
     const name = reply.results[0].refmod;
     adopt(await api("/project/" + state.folder));
     renderAll();
-    toast("Making a RefMod from the pictures of " + person.name + ". It takes a minute or so.");
+    toast("正在根据以下角色的图片制作 RefMod：" + person.name + "。大约需要一分钟。");
     for (let tries = 0; tries < 90; tries++) {
       await new Promise((done) => setTimeout(done, 4000));
       const { refmods } = await api("/projects");
       if (!refmods?.files?.includes(name)) continue;
       state.refmods = refmods;
       renderInspector();
-      toast("The RefMod of " + person.name + " is ready. New renders with " + person.name + " use it.");
+      toast("以下角色的 RefMod：" + person.name + "已就绪。后续包含以下角色的渲染：" + person.name + "将使用它。");
       return;
     }
-    toast("The RefMod of " + person.name + " has not appeared yet. Look at the ComfyUI log if it does not.", true);
+    toast("以下角色的 RefMod：" + person.name + "尚未出现。如一直没有结果，请查看 ComfyUI 日志。", true);
   } catch (error) {
     toast(error.message, true);
   }
@@ -1056,7 +1069,7 @@ function addRefmodMember() {
   if (!file) return;
   checkpoint();
   state.project.cast = state.project.cast || [];
-  const person = { id: uid("p"), name: "Person " + (state.project.cast.length + 1), description: "", refmod: { file, strength: 1 } };
+  const person = { id: uid("p"), name: "角色 " + (state.project.cast.length + 1), description: "", refmod: { file, strength: 1 } };
   state.project.cast.push(person);
   state.person = person.id;
   state.clip = null;
@@ -1077,12 +1090,12 @@ function morePictures(person) {
     cell.className = "picture";
     const image = document.createElement("img");
     image.src = assetUrl(asset);
-    image.alt = "Another picture of " + person.name;
+    image.alt = "另一张参考图：" + person.name;
     const remove = document.createElement("button");
     remove.className = "picture-remove";
     remove.textContent = "\u00d7";
-    remove.title = "Remove this picture";
-    remove.setAttribute("aria-label", "Remove this picture of " + person.name);
+    remove.title = "移除此图片";
+    remove.setAttribute("aria-label", "移除此角色的图片：" + person.name);
     remove.addEventListener("click", () => {
       checkpoint();
       person.pictures = person.pictures.filter((p) => p !== asset);
@@ -1096,8 +1109,8 @@ function morePictures(person) {
   if (others.length < CAST_PICTURES - 1) {
     const add = document.createElement("button");
     add.className = "quiet picture-add";
-    add.textContent = others.length ? "Add" : "Add more pictures";
-    add.title = "Add another picture of " + person.name;
+    add.textContent = others.length ? "添加" : "添加更多参考图";
+    add.title = "为以下角色添加图片：" + person.name;
     add.addEventListener("click", async () => {
       const file = await pickFile($("castFile"));
       if (!file) return;
@@ -1116,8 +1129,8 @@ function morePictures(person) {
   const hint = document.createElement("p");
   hint.className = "hint";
   hint.textContent = others.length
-    ? (others.length + 1) + " of " + CAST_PICTURES + " pictures. A shot takes 9 pictures in all, shared between its cast."
-    : "Other angles and the whole figure help a shot keep them the same.";
+    ? (others.length + 1) + " / " + CAST_PICTURES + " 张图片。每个镜头最多使用 9 张图片，由各角色共享。"
+    : "补充其他角度及全身照片，可提高各镜头的角色一致性。";
   box.append(row, hint);
   return box;
 }
@@ -1129,7 +1142,7 @@ function removePerson(person) {
   if (state.person === person.id) state.person = null;
   save();
   renderAll();
-  toast("Removed " + person.name + " from the cast.", false, undoAction);
+  toast("已移除 " + person.name + "的角色信息。", false, undoAction);
 }
 
 function renderPerson(panel, person) {
@@ -1141,15 +1154,15 @@ function renderPerson(panel, person) {
   const title = document.createElement("h2");
   title.className = "head-title";
   title.textContent = person.name;
-  row.append(title, trashButton("Remove " + person.name + " from the cast", () => removePerson(person)));
+  row.append(title, trashButton("移除 " + person.name + "的角色信息", () => removePerson(person)));
   const line = document.createElement("p");
   line.className = "status";
   const has = [];
-  if (person.file) has.push(1 + (person.pictures || []).length === 1 ? "1 picture" : 1 + (person.pictures || []).length + " pictures");
-  if (person.voice) has.push("a voice");
-  if (person.refmod) has.push("a RefMod");
+  if (person.file) has.push(1 + (person.pictures || []).length === 1 ? "1 张图片" : 1 + (person.pictures || []).length + " 张图片");
+  if (person.voice) has.push("一个声音");
+  if (person.refmod) has.push("一个 RefMod");
   const used = state.project.clips.filter((c) => (c.cast || []).includes(person.id)).length;
-  line.textContent = has.join(", ") + (used ? ". In " + used + (used === 1 ? " clip" : " clips") : ". Not in a clip yet");
+  line.textContent = has.join(", ") + (used ? "。用于 " + used + (used === 1 ? " 个镜头" : " 个镜头") : "。尚未用于镜头");
   head.append(row, line);
   // The panel keeps who they are at a glance; their pictures, voice and RefMod are edited in a dialog.
   const card = document.createElement("div");
@@ -1167,25 +1180,25 @@ function renderPerson(panel, person) {
   }
   const words = document.createElement("p");
   words.className = "person-words";
-  words.textContent = String(person.description || "").trim() || (person.file || person.refmod ? "No description yet." : "No description of the voice yet.");
+  words.textContent = String(person.description || "").trim() || (person.file || person.refmod ? "暂无描述。" : "暂无声音描述。");
   card.append(words);
   const edit = document.createElement("button");
   edit.className = "quiet wide";
   edit.dataset.key = "Edit cast member";
-  edit.append(icon("pen"), person.file ? "Pictures, voice and description" : "Voice and description");
+  edit.append(icon("pen"), person.file ? "图片、声音与描述" : "声音与描述");
   edit.addEventListener("click", () => openPerson(person.id));
-  const name = field("Name", person.name, (v) => {
+  const name = field("名称", person.name, (v) => {
     person.name = v.trim() || person.name;
     title.textContent = person.name;
     renderCast();
   });
-  panel.replaceChildren(head, section("About", [card, name, edit, catalogRow(person)], "person"));
+  panel.replaceChildren(head, section("简介", [card, name, edit, catalogRow(person)], "person"));
 }
 
 // Everything about a cast member, in a dialog wide enough for their pictures and voice side by side.
 function openPerson(id) {
   const live = () => (state.project.cast || []).find((c) => c.id === id);
-  openPanelDialog(() => live()?.name || "Cast member", () => {
+  openPanelDialog(() => live()?.name || "角色", () => {
     const person = live();
     if (!person) return null;
     const left = [];
@@ -1194,19 +1207,19 @@ function openPerson(id) {
       image.className = "portrait";
       image.alt = person.name;
       image.src = assetUrl(person);
-      left.push(section("Pictures", [image, morePictures(person)], "picture"));
+      left.push(section("参考图", [image, morePictures(person)], "picture"));
     }
-    left.push(section("About", [
-      field("Name", person.name, (v) => {
+    left.push(section("简介", [
+      field("名称", person.name, (v) => {
         person.name = v.trim() || person.name;
         $("panelDialogTitle").textContent = person.name;
         renderCast();
       }),
       person.file || person.refmod
-        ? field("What they look like", person.description, (v) => (person.description = v), { big: true })
-        : field("How they sound", person.description, (v) => (person.description = v), { area: true, placeholder: "A warm, calm female narrator" }),
+        ? field("外貌描述", person.description, (v) => (person.description = v), { big: true })
+        : field("声音描述", person.description, (v) => (person.description = v), { area: true, placeholder: "温暖、沉稳的女性旁白" }),
     ], "person"));
-    const right = [section("Voice", [voiceSection(person)], "speech")];
+    const right = [section("声音", [voiceSection(person)], "speech")];
     if (state.refmods.installed || person.refmod) right.push(section("RefMod", refmodSection(person), "layers"));
     const columns = [left, right].map((parts) => {
       const column = document.createElement("div");
@@ -1227,17 +1240,17 @@ function mergeWithNext() {
   const next = item && followingItem(item);
   if (!item || !next || !activeTake(clipOf(next.clip))) return;
   if (next.start !== itemEnd(item)) {
-    toast("Put the two clips side by side to merge them.", true);
+    toast("请先将两个片段紧邻排列，再执行融合。", true);
     return;
   }
   const away = Math.ceil(MERGE_FRAMES / 2);
   const rest = MERGE_FRAMES - away;
   if (speedOf(item) !== 1 || speedOf(next) !== 1) {
-    toast("Set both clips to 100% speed to merge them.", true);
+    toast("请将两个片段的速度设为 100%，再执行融合。", true);
     return;
   }
   if (item.out - item.in < HOLD + away || next.out - next.in < HOLD + rest) {
-    toast("Both clips need at least " + (HOLD + away) + " frames on the timeline to merge.", true);
+    toast("两个片段在时间线上均至少需要 " + (HOLD + away) + " 帧，才能融合。", true);
     return;
   }
   const track = continuedTrack(clipOf(item.clip), item, "bridge", 0, item.out - away);
@@ -1252,7 +1265,7 @@ function mergeWithNext() {
   joinSide(link, "a", item, false);
   joinSide(link, "b", next, false);
   const clip = {
-    id: uid("c"), name: "Merge from " + source.name,
+    id: uid("c"), name: "融合自 " + source.name,
     action: "One continuous shot that moves naturally from the opening frames into the closing frames.",
     camera: "", speaker: "", dialogue: "", sound: "", music: "", seconds: 2.625, takes: [], active: null,
     link,
@@ -1301,7 +1314,7 @@ function closeGap() {
 function rippleDelete() {
   const item = state.project.timeline.find((i) => i.id === state.item);
   if (!item) {
-    toast("Select a clip on the timeline first.");
+    toast("请先选择时间线上的片段。");
     return;
   }
   checkpoint();
@@ -1366,21 +1379,21 @@ function selectClip(clipId, itemId = null) {
 function clipStatus(clip) {
   const job = jobFor(clip.id);
   if (job) {
-    if (state.running !== job) return { kind: "live", text: "Queued" };
-    return { kind: "live", text: job.max ? "Rendering " + Math.round((job.progress || 0) * 100) + "%" : "Rendering" };
+    if (state.running !== job) return { kind: "live", text: "排队中" };
+    return { kind: "live", text: job.max ? "正在渲染 " + Math.round((job.progress || 0) * 100) + "%" : "正在渲染" };
   }
-  if (clip.error) return { kind: "danger", text: "Render failed" };
-  if (!clip.takes.length) return { kind: "muted", text: "Not rendered" };
-  if (clip.kind === "footage") return { kind: "", text: "Footage" };
-  if (isStale(clip)) return { kind: "danger", text: "Source changed" };
+  if (clip.error) return { kind: "danger", text: "渲染失败" };
+  if (!clip.takes.length) return { kind: "muted", text: "尚未渲染" };
+  if (clip.kind === "footage") return { kind: "", text: "导入素材" };
+  if (isStale(clip)) return { kind: "danger", text: "源素材已更改" };
   const take = activeTake(clip);
-  const quality = take.upscaled ? "Upscaled" : take.quality === "final" ? "Final" : "Draft";
-  return { kind: "", text: clip.takes.length > 1 ? quality + ", take " + (clip.takes.indexOf(take) + 1) + " of " + clip.takes.length : quality };
+  const quality = take.upscaled ? "已超分" : take.quality === "final" ? "成片" : "草稿";
+  return { kind: "", text: clip.takes.length > 1 ? quality + "，版本 " + (clip.takes.indexOf(take) + 1) + " / " + clip.takes.length : quality };
 }
 
 function clipSeconds(clip) {
   const take = activeTake(clip);
-  return (take ? take.frames / FPS : clip.seconds).toFixed(1) + " s";
+  return (take ? take.frames / FPS : clip.seconds).toFixed(1) + " 秒";
 }
 
 // Run the pointer across a thumbnail to scrub through the clip, frame strip permitting.
@@ -1472,8 +1485,8 @@ function addBin() {
   checkpoint();
   state.project.bins = state.project.bins || [];
   let number = state.project.bins.length + 1;
-  while (state.project.bins.some((b) => b.name === "Bin " + number)) number++;
-  const bin = { id: uid("b"), name: "Bin " + number };
+  while (state.project.bins.some((b) => b.name === "素材箱 " + number)) number++;
+  const bin = { id: uid("b"), name: "素材箱 " + number };
   state.project.bins.push(bin);
   save();
   selectBin(bin.id);
@@ -1496,8 +1509,8 @@ function deleteBin(bin) {
   saveFolded();
   save();
   renderAll();
-  const kept = freed.length === 1 ? " Its clip stays in the list." : freed.length ? " Its " + freed.length + " clips stay in the list." : "";
-  toast("Deleted " + bin.name + "." + kept, false, undoAction);
+  const kept = freed.length === 1 ? "其中的片段会保留在列表中。" : freed.length ? "其中的 " + freed.length + " 个片段会保留在列表中。" : "";
+  toast("已删除 " + bin.name + "." + kept, false, undoAction);
 }
 
 function fileClip(clip, binId) {
@@ -1513,7 +1526,7 @@ function fileClip(clip, binId) {
 function deleteClip(clip) {
   if (!clip) return;
   if (jobFor(clip.id)) {
-    toast(clip.name + " is rendering. Cancel its render, then delete it.", true);
+    toast(clip.name + "正在渲染，请先取消渲染后再删除。", true);
     return;
   }
   checkpoint();
@@ -1526,7 +1539,7 @@ function deleteClip(clip) {
   if (!state.project.timeline.some((i) => i.id === state.item)) state.item = null;
   save();
   renderAll();
-  toast("Deleted " + clip.name + (placed ? " and took it off the timeline" : "") + ".", false, undoAction);
+  toast("已删除 " + clip.name + (placed ? "，并已从时间线移除" : "") + ".", false, undoAction);
 }
 
 function trashButton(label, onClick) {
@@ -1589,7 +1602,7 @@ function iconButton(name, label, run, kind = "quiet") {
 }
 
 // One line that names a setting kept in a dialog, says what it is now, and opens the dialog.
-function settingRow(iconName, label, value, run, action = "Edit", tip = "") {
+function settingRow(iconName, label, value, run, action = "编辑", tip = "") {
   const row = document.createElement("div");
   row.className = "setting-row";
   const name = document.createElement("span");
@@ -1674,33 +1687,33 @@ async function catalogOps(ops, done) {
 function catalogRow(person) {
   const save = (words) => () => catalogOps([{ op: "save_cast_to_catalog", cast: person.id }], () => words);
   const update = () => catalogOps([{ op: "update_cast_from_catalog", cast: person.id }],
-    () => person.name + " now matches the catalog.");
+    () => person.name + "已与角色库同步。");
   switch (catalogState(person)) {
     case "current":
-      return settingRow("layers", "Catalog", "Up to date", () => openCatalog(), "Open", "Open the catalog");
+      return settingRow("layers", "角色库", "已是最新", () => openCatalog(), "打开", "打开角色库");
     case "changed":
-      return settingRow("layers", "Catalog", "Changed here", save("Saved the changes to the catalog. Other projects can update " + person.name + " now."),
-        "Save", "Save these changes to the catalog, for other projects to take");
+      return settingRow("layers", "角色库", "本项目已修改", save("修改已保存到角色库。其他项目现在可以更新 " + person.name + "。"),
+        "保存", "将修改保存到角色库，供其他项目使用");
     case "newer":
-      return settingRow("layers", "Catalog", castEdited(person) ? "Newer there, and changed here" : "Newer in the catalog", update, "Update",
-        castEdited(person) ? "Take the catalog's version. It replaces the changes made here; undo brings them back" : "Take the catalog's version");
+      return settingRow("layers", "角色库", castEdited(person) ? "角色库有新版本，且本项目也有修改" : "角色库有新版本", update, "更新",
+        castEdited(person) ? "使用角色库版本替换本项目的修改；可以撤销" : "使用角色库版本");
     case "missing":
-      return settingRow("layers", "Catalog", "Removed from it", save("Saved " + person.name + " to the catalog again."), "Save", "Save to the catalog again");
+      return settingRow("layers", "角色库", "已从库中移除", save("已保存 " + person.name + "至角色库。"), "保存", "重新保存到角色库");
     default:
-      return settingRow("layers", "Catalog", "Not in it", save("Saved " + person.name + " to the catalog. Any project can bring them in from Cast, Add."),
-        "Save", "Save to the catalog, for any project to bring in");
+      return settingRow("layers", "角色库", "尚未入库", save("已保存 " + person.name + "至角色库。各项目均可通过“角色→添加”导入。"),
+        "保存", "保存到角色库，供其他项目导入");
   }
 }
 
 // Everyone in the catalog, to bring into this project, to bring up to date everywhere, or to remove.
 function openCatalog() {
   let removing = null;
-  openPanelDialog("Cast catalog", () => {
+  openPanelDialog("角色库", () => {
     const rows = state.catalog || [];
     if (!rows.length) {
       const empty = document.createElement("p");
       empty.className = "hint";
-      empty.textContent = "No one in the catalog yet. Select a cast member, then press Save beside Catalog, and any project can bring them in.";
+      empty.textContent = "角色库为空。选择一个角色，点击“角色库”旁的“保存”，其他项目即可导入。";
       return [empty];
     }
     const grid = document.createElement("div");
@@ -1724,12 +1737,12 @@ function openCatalog() {
       name.textContent = entry.name;
       const has = [];
       const pictures = (entry.file ? 1 : 0) + (entry.pictures || []).length;
-      if (pictures) has.push(pictures === 1 ? "1 picture" : pictures + " pictures");
-      if (entry.voice) has.push("a voice");
-      if (entry.refmod) has.push("a RefMod");
+      if (pictures) has.push(pictures === 1 ? "1 张图片" : pictures + " 张图片");
+      if (entry.voice) has.push("一个声音");
+      if (entry.refmod) has.push("一个 RefMod");
       const facts = document.createElement("span");
       facts.className = "catalog-facts";
-      facts.textContent = has.join(", ") + (entry.version > 1 ? ". Version " + entry.version : "");
+      facts.textContent = has.join(", ") + (entry.version > 1 ? "。版本 " + entry.version : "");
       const about = document.createElement("p");
       about.className = "person-words";
       about.textContent = entry.description || "";
@@ -1739,10 +1752,10 @@ function openCatalog() {
       const here = (state.project.cast || []).find((p) => p.catalog?.id === entry.id);
       const add = document.createElement("button");
       add.className = here ? "quiet small" : "primary small";
-      add.textContent = here ? "In this project" : "Add to project";
+      add.textContent = here ? "当前项目" : "添加到项目";
       add.disabled = Boolean(here);
       add.addEventListener("click", async () => {
-        const done = await catalogOps([{ op: "add_cast_from_catalog", catalog: entry.id }], () => entry.name + " is in the cast.");
+        const done = await catalogOps([{ op: "add_cast_from_catalog", catalog: entry.id }], () => entry.name + "已加入角色列表。");
         const id = done?.[0]?.cast;
         if (id) {
           $("panelDialog").close();
@@ -1754,8 +1767,8 @@ function openCatalog() {
       });
       const spread = document.createElement("button");
       spread.className = "quiet small";
-      spread.textContent = "Update every project";
-      spread.title = "Bring every project's copy of " + entry.name + " up to this version. Copies changed in their project are left alone";
+      spread.textContent = "更新所有项目";
+      spread.title = "将各项目中的以下角色：" + entry.name + "更新到此版本。项目中自行修改过的副本将保留。";
       spread.addEventListener("click", async () => {
         try {
           await flush();
@@ -1764,17 +1777,17 @@ function openCatalog() {
           renderAll();
           const n = reply.updated.length;
           const kept = reply.kept.length;
-          toast((n ? "Updated " + entry.name + " in " + n + (n === 1 ? " project." : " projects.") : "Every project already has this version of " + entry.name + ".")
-            + (kept ? " " + kept + (kept === 1 ? " copy was" : " copies were") + " changed in its project, so it was left alone." : ""));
+          toast((n ? "已更新 " + entry.name + "，涉及 " + n + (n === 1 ? " 个项目。" : " 个项目。") : "各项目均已使用此版本：" + entry.name + ".")
+            + (kept ? " " + kept + (kept === 1 ? " 个副本" : " 个副本") + "已在所属项目中修改，因此未覆盖。" : ""));
         } catch (error) {
           toast(error.message, true);
         }
       });
       const remove = document.createElement("button");
       remove.className = removing === entry.id ? "primary danger small" : "icon delete";
-      if (removing === entry.id) remove.textContent = "Remove for good";
+      if (removing === entry.id) remove.textContent = "永久移除";
       else remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15"/><path d="M9.5 7V4.8h5V7"/><path d="M6.5 7l.8 11.6a1.6 1.6 0 0 0 1.6 1.4h6.2a1.6 1.6 0 0 0 1.6-1.4L17.5 7"/><path d="M10.2 10.8v5.6M13.8 10.8v5.6"/></svg>';
-      const removeWords = "Remove " + entry.name + " from the catalog. Projects keep their own copies";
+      const removeWords = "移除 " + entry.name + "的角色库记录。各项目保留自己的副本。";
       remove.setAttribute("aria-label", removeWords);
       remove.title = removeWords;
       remove.addEventListener("click", async () => {
@@ -1788,7 +1801,7 @@ function openCatalog() {
           state.catalog = (await postJson("/cast-catalog/remove", { id: entry.id })).cast || [];
           removing = null;
           renderInspector();
-          toast("Removed " + entry.name + " from the catalog. Projects keep their own copies.");
+          toast("已移除 " + entry.name + "的角色库记录。各项目保留自己的副本。");
         } catch (error) {
           toast(error.message, true);
         }
@@ -1843,7 +1856,7 @@ function renderBin() {
   const bins = state.project.bins || [];
   $("clipCount").textContent = clips.length ? String(clips.length) : "";
   if (!clips.length && !bins.length) {
-    list.innerHTML = '<p class="empty">Add a clip, describe the shot, and render a draft.</p>';
+    list.innerHTML = "<p class=\"empty\">添加镜头、描述画面，然后渲染草稿。</p>";
     return;
   }
   const filed = new Set(bins.map((b) => b.id));
@@ -1864,8 +1877,8 @@ function binGroup(bin, inside) {
   const fold = document.createElement("button");
   fold.className = "fold";
   fold.setAttribute("aria-expanded", String(open));
-  fold.setAttribute("aria-label", (open ? "Fold " : "Unfold ") + bin.name);
-  fold.title = open ? "Fold the bin" : "Unfold the bin";
+  fold.setAttribute("aria-label", (open ? "折叠 " : "展开 ") + bin.name);
+  fold.title = open ? "折叠素材箱" : "展开素材箱";
   fold.addEventListener("click", () => toggleBin(bin.id));
   const name = document.createElement("button");
   name.className = "bin-name";
@@ -1887,7 +1900,7 @@ function binGroup(bin, inside) {
     else {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "Drag clips here.";
+      empty.textContent = "将片段拖到这里。";
       body.append(empty);
     }
     group.append(body);
@@ -1939,7 +1952,7 @@ function clipRow(clip) {
   if (open) {
     const count = document.createElement("span");
     count.className = "notes";
-    count.textContent = open === 1 ? "1 note" : open + " notes";
+    count.textContent = open === 1 ? "1 条标注" : open + " 条标注";
     meta.append(count);
   }
   text.append(title, meta);
@@ -2024,7 +2037,7 @@ function asProfile(row) {
   const missing = [row.unet, row.unet_text].filter((f) => f && !state.checkpoints.some((c) => sameFile(c, f)));
   return {
     id: row.id, title: row.title || fileName(row.unet), own: true, available: !missing.length, missing,
-    hint: "Your own checkpoint, on the settings of " + (base?.title || "MiniMax H3") + ".",
+    hint: "自定义检查点，采用以下模型的设置：" + (base?.title || "MiniMax H3") + ".",
   };
 }
 
@@ -2085,15 +2098,15 @@ function choice(label, options, value, onChange) {
 // H3's text encoder and video VAE come in several precisions. A project renders with the first
 // one installed unless it names another here.
 function encoderChoices() {
-  const rows = [["Text encoder", "clip", state.encoders.text_encoders, state.encoders.auto.text_encoder],
-    ["Video VAE", "vae", state.encoders.vaes, state.encoders.auto.vae]];
+  const rows = [["文本编码器", "clip", state.encoders.text_encoders, state.encoders.auto.text_encoder],
+    ["视频 VAE", "vae", state.encoders.vaes, state.encoders.auto.vae]];
   const out = [];
   for (const [label, key, files, auto] of rows) {
     const current = state.project.models?.[key] || "";
     // Nothing to choose between, and nothing chosen: no menu.
     if (files.length < 2 && !current) continue;
-    const options = [["", "Automatic" + (auto ? ": " + fileName(auto) : "")], ...files.map((f) => [f, fileName(f) + smallEncoderNote(key, f)])];
-    if (current && !files.some((f) => sameFile(f, current))) options.push([current, fileName(current) + " (not installed)"]);
+    const options = [["", "自动选择" + (auto ? ": " + fileName(auto) : "")], ...files.map((f) => [f, fileName(f) + smallEncoderNote(key, f)])];
+    if (current && !files.some((f) => sameFile(f, current))) options.push([current, fileName(current) + "（未安装）"]);
     out.push(choice(label, options, current, (value) => {
       const models = { ...(state.project.models || {}) };
       if (value) models[key] = value;
@@ -2107,9 +2120,9 @@ function encoderChoices() {
   const fits = Object.entries(state.encoders.projections || {}).find(([f]) => sameFile(f, encoder || ""))?.[1] || [];
   const chosen = state.project.models?.projection || "";
   if (fits.length > 1 || (chosen && fits.length)) {
-    const options = [["", "Automatic: " + fileName(fits[0])], ...fits.map((f) => [f, fileName(f)])];
-    if (chosen && !fits.some((f) => sameFile(f, chosen))) options.push([chosen, fileName(chosen) + " (does not fit this encoder)"]);
-    out.push(choice("Projection", options, chosen, (value) => {
+    const options = [["", "自动：" + fileName(fits[0])], ...fits.map((f) => [f, fileName(f)])];
+    if (chosen && !fits.some((f) => sameFile(f, chosen))) options.push([chosen, fileName(chosen) + "（不匹配此编码器）"]);
+    out.push(choice("投影模型", options, chosen, (value) => {
       const models = { ...(state.project.models || {}) };
       if (value) models.projection = value;
       else delete models.projection;
@@ -2120,11 +2133,11 @@ function encoderChoices() {
   if (out.length) {
     const hint = document.createElement("p");
     hint.className = "hint";
-    hint.textContent = "The int8 and nvfp4 files are smaller and load faster; bf16 and fp16 are the full precision. "
+    hint.textContent = "int8 和 nvfp4 文件更小、加载更快；bf16 和 fp16 为全精度版本。"
       + (state.encoders.text_encoders.some((f) => smallEncoderNote("clip", f))
-        ? "A 4B or 8B text encoder takes about a third of the 32B's memory, through a projection, and knows less: named people and speech in languages other than English suffer most. "
+        ? "4B 或 8B 文本编码器通过投影适配，内存占用约为 32B 的三分之一，但知识能力较弱，尤其影响特定人物及非英语对白。"
         : "")
-      + "New renders use the choice.";
+      + "新渲染使用此设置。";
     out.push(hint);
   }
   return out;
@@ -2136,7 +2149,7 @@ function smallEncoderNote(key, file) {
   const name = fileName(file).toLowerCase().replace(/-/g, "_");
   if (name.includes("minimax")) return "";
   const size = name.match(/qwen3_?vl_?(4|8)b/);
-  return size ? " (" + size[1] + "B, through a projection)" : "";
+  return size ? " (" + size[1] + "B，经投影适配）" : "";
 }
 
 // The checkpoint being edited in the Models dialog, or null while it shows the list.
@@ -2149,10 +2162,10 @@ function modelSummary(row) {
   const steps = (quality) => (custom && row.steps?.[quality]) || base.steps?.[quality] || "?";
   const lora = custom && row.lora === false ? null : base.lora;
   const parts = [
-    steps("draft") + " and " + steps("final") + " steps",
+    steps("draft") + " 和 " + steps("final") + " 步",
     ((custom && row.sampler) || base.sampler || "") + " / " + ((custom && row.scheduler) || base.scheduler || "simple"),
   ];
-  if (lora) parts.push("adds " + fileName(lora));
+  if (lora) parts.push("添加 " + fileName(lora));
   parts.push(fileName(row.unet || ""));
   return parts.filter(Boolean).join(", ");
 }
@@ -2197,7 +2210,7 @@ function renderModels() {
     const shown = ownProfiles().find((p) => p.id === row.id);
     const files = (current) => {
       const list = state.checkpoints.map((f) => [f, f]);
-      if (current && !state.checkpoints.some((f) => sameFile(f, current))) list.unshift([current, current + " (not installed)"]);
+      if (current && !state.checkpoints.some((f) => sameFile(f, current))) list.unshift([current, current + "（未安装）"]);
       return list;
     };
     const text = (label, value, onInput, options) => {
@@ -2217,21 +2230,21 @@ function renderModels() {
     }, { type: "number", placeholder: String(base.steps?.[quality] ?? "") });
     const pair = document.createElement("div");
     pair.className = "halves";
-    pair.append(steps("draft", "Draft steps"), steps("final", "Final steps"));
+    pair.append(steps("draft", "草稿步数"), steps("final", "成片步数"));
     const set = (key) => (value) => {
       if (value) live(row.id)[key] = value;
       else delete live(row.id)[key];
     };
-    const back = button("All models", () => openModels(null), "quiet small");
+    const back = button("所有模型", () => openModels(null), "quiet small");
     const title = document.createElement("h3");
     title.className = "model-editing";
     title.textContent = row.title || fileName(row.unet);
     const children = [
       back, title,
-      text("Name", row.title || "", (v) => (live(row.id).title = v), { placeholder: fileName(row.unet) }),
-      choice("Model file", files(row.unet), row.unet, set("unet")),
-      choice("Model file for clips that are only a prompt", [["", "The same file"], ...files(row.unet_text)], row.unet_text || "", set("unet_text")),
-      choice("Settings from", state.profiles.map((p) => [p.id, p.title + ": " + modelSummary(p).split(", ").slice(1).join(", ")]), row.base || "h3", set("base")),
+      text("名称", row.title || "", (v) => (live(row.id).title = v), { placeholder: fileName(row.unet) }),
+      choice("模型文件", files(row.unet), row.unet, set("unet")),
+      choice("纯文本镜头使用的模型文件", [["", "使用同一文件"], ...files(row.unet_text)], row.unet_text || "", set("unet_text")),
+      choice("沿用设置", state.profiles.map((p) => [p.id, p.title + ": " + modelSummary(p).split(", ").slice(1).join(", ")]), row.base || "h3", set("base")),
     ];
     if (base.lora) {
       // A family such as MiniMax H3 Turbo samples with a LoRA. A checkpoint with that built in must not get it twice.
@@ -2249,47 +2262,47 @@ function renderModels() {
         redraw();
       });
       const label = document.createElement("span");
-      label.textContent = "Add " + base.title + "'s LoRA, " + fileName(base.lora);
+      label.textContent = "添加 " + base.title + "的 LoRA：" + fileName(base.lora);
       keep.append(box, label);
       const why = document.createElement("p");
       why.className = "hint";
-      why.textContent = "Untick it for a checkpoint that already has its turbo built in.";
+      why.textContent = "如果检查点已内置加速效果，请取消勾选。";
       children.push(keep, why);
     }
-    children.push(pair, choice("Sampler", [["", "As " + base.title + ": " + (base.sampler || "")], ...state.samplers.map((n) => [n, n])], row.sampler || "", set("sampler")));
+    children.push(pair, choice("采样器", [["", "沿用 " + base.title + ": " + (base.sampler || "")], ...state.samplers.map((n) => [n, n])], row.sampler || "", set("sampler")));
     if (/hyperflow/i.test(fileName(row.unet)) || /\.gguf$/i.test(row.unet)) {
       const own = document.createElement("p");
       own.className = "hint";
-      own.textContent = "A HyperFlow file samples on its own schedule, so there is no scheduler to pick.";
+      own.textContent = "HyperFlow 使用自身的采样计划，无需选择调度器。";
       children.push(own);
     } else {
-      children.push(choice("Scheduler", [["", "As " + base.title + ": " + (base.scheduler || "simple")], ...state.schedulers.map((n) => [n, n])], row.scheduler || "", set("scheduler")));
+      children.push(choice("调度器", [["", "沿用 " + base.title + ": " + (base.scheduler || "simple")], ...state.schedulers.map((n) => [n, n])], row.scheduler || "", set("scheduler")));
     }
     const about = document.createElement("p");
     about.className = "hint" + (shown && !shown.available ? " bad" : "");
     about.textContent = shown && !shown.available
-      ? "Not installed. Needs " + shown.missing.join(" and ") + " in models/diffusion_models."
-      : "Renders with: " + modelSummary(row) + ". Empty steps follow " + base.title + ", and so does the way finals are refined.";
+      ? "未安装。需要 " + shown.missing.join(" 和 ") + "，放入 models/diffusion_models。"
+      : "渲染配置：" + modelSummary(row) + "。步数留空时沿用 " + base.title + "的设置，成片精修方式也相同。";
     children.push(about);
     body.replaceChildren(...children);
 
     const inUse = state.project.profile === row.id;
     const preset = state.presets.find((r) => r.id === row.id);
     const same = preset && checkpointText(preset) === checkpointText(row);
-    const keep = button(!preset ? "Save as a preset" : same ? "Saved as a preset" : "Update the preset", async () => {
+    const keep = button(!preset ? "保存为预设" : same ? "已保存为预设" : "更新预设", async () => {
       await flush();
       const mine = structuredClone(live(row.id));
       await savePresets(preset ? state.presets.map((r) => (r.id === mine.id ? mine : r)) : [...state.presets, mine],
-        preset ? "Updated the preset." : "Saved. Every project now offers it.");
+        preset ? "预设已更新。" : "已保存。所有项目均可使用此预设。");
       renderModels();
     }, "quiet");
     keep.disabled = Boolean(same);
-    keep.title = "A preset is offered in every project";
-    const go = button(inUse ? "The project renders with it" : "Render the project with it", () => use(row.id), "primary");
+    keep.title = "预设可用于所有项目";
+    const go = button(inUse ? "项目当前使用此模型" : "项目使用此模型渲染", () => use(row.id), "primary");
     go.disabled = inUse || (shown && !shown.available);
     const spacer = document.createElement("span");
     spacer.className = "spacer";
-    foot.replaceChildren(trashButton("Remove " + (row.title || fileName(row.unet)) + " from this project", () => {
+    foot.replaceChildren(trashButton("移除 " + (row.title || fileName(row.unet)) + "的项目配置", () => {
       checkpoint();
       state.project.checkpoints = state.project.checkpoints.filter((r) => !r || r.id !== row.id);
       // What rendered on it goes back to the first model installed, as the server would pick.
@@ -2319,7 +2332,7 @@ function renderModels() {
     if (row.id === current) {
       const badge = document.createElement("span");
       badge.className = "model-badge";
-      badge.textContent = "In use";
+      badge.textContent = "使用中";
       side.append(badge);
     }
     side.append(...actions);
@@ -2342,43 +2355,43 @@ function renderModels() {
     return box;
   };
   const builtIn = state.profiles.map((p) => line(p,
-    p.available ? { text: modelSummary(p) } : { bad: true, text: "Not installed. Needs " + p.missing.join(" and ") + "." },
-    p.available && p.id !== current ? [button("Use", () => use(p.id))] : []));
+    p.available ? { text: modelSummary(p) } : { bad: true, text: "未安装。需要 " + p.missing.join(" 和 ") + "." },
+    p.available && p.id !== current ? [button("使用", () => use(p.id))] : []));
   const mine = rows.map((row) => {
     const shown = ownProfiles().find((p) => p.id === row.id);
     const ok = !shown || shown.available;
-    return line(row, ok ? { text: modelSummary(row) } : { bad: true, text: "Not installed. Needs " + shown.missing.join(" and ") + "." }, [
-      ...(ok && row.id !== current ? [button("Use", () => use(row.id))] : []),
-      button("Edit", () => openModels(row.id)),
+    return line(row, ok ? { text: modelSummary(row) } : { bad: true, text: "未安装。需要 " + shown.missing.join(" 和 ") + "." }, [
+      ...(ok && row.id !== current ? [button("使用", () => use(row.id))] : []),
+      button("编辑", () => openModels(row.id)),
     ]);
   });
   const spare = sparePresets().map((row) => line(row, { text: modelSummary(row) }, [
-    button("Add to project", () => {
+    button("添加到项目", () => {
       checkpoint();
       adoptPreset(row.id);
       save();
       redraw();
     }),
-    trashButton("Delete the preset " + (row.title || fileName(row.unet)), async () => {
-      await savePresets(state.presets.filter((r) => r.id !== row.id), "Deleted the preset. Projects that use it keep their copy.");
+    trashButton("删除预设 " + (row.title || fileName(row.unet)), async () => {
+      await savePresets(state.presets.filter((r) => r.id !== row.id), "预设已删除。使用它的项目保留自己的副本。");
       renderModels();
     }),
   ]));
-  const groups = [group("Built in", builtIn)];
-  if (mine.length) groups.push(group("In this project", mine));
-  if (spare.length) groups.push(group("Your presets", spare, "Kept for every project. Adding one copies it into this project."));
+  const groups = [group("内置模型", builtIn)];
+  if (mine.length) groups.push(group("当前项目", mine));
+  if (spare.length) groups.push(group("自定义预设", spare, "预设供所有项目使用。添加后会复制到当前项目。"));
   // The text encoder, video VAE and projection, which every model of this project renders with.
   const files = encoderChoices();
   if (files.length) {
-    const box = group("Model files", []);
+    const box = group("模型文件", []);
     box.classList.add("model-files");
     box.append(...files);
     groups.push(box);
   }
   body.replaceChildren(...groups);
 
-  const add = button("Add a checkpoint", async () => {
-    const file = await pickFile2("Add a checkpoint", state.checkpoints, "From models/diffusion_models. Pick a MiniMax H3 checkpoint, such as a community fine-tune.");
+  const add = button("添加检查点", async () => {
+    const file = await pickFile2("添加检查点", state.checkpoints, "从 models/diffusion_models 选择 MiniMax H3 检查点，例如社区微调模型。");
     if (!file) return;
     checkpoint();
     const id = "m" + crypto.randomUUID().replaceAll("-", "").slice(0, 8);
@@ -2389,7 +2402,7 @@ function renderModels() {
   }, "quiet");
   const note = document.createElement("span");
   note.className = "model-note";
-  note.textContent = "Any MiniMax H3 checkpoint works: add its file, then set what it renders with.";
+  note.textContent = "可添加其他 MiniMax H3 检查点文件，并设置渲染参数。";
   foot.replaceChildren(add, note);
 }
 
@@ -2398,19 +2411,19 @@ function clipModel(clip) {
   const wrap = document.createElement("label");
   wrap.className = "choice";
   const title = document.createElement("span");
-  title.textContent = "Model";
+  title.textContent = "模型";
   const select = document.createElement("select");
   select.dataset.key = "Clip model";
   const own = profileOf(clip.profile);
   const usual = document.createElement("option");
   usual.value = "";
-  usual.textContent = "The project's model" + (projectProfile() ? ": " + projectProfile().title : "");
+  usual.textContent = "项目默认模型" + (projectProfile() ? ": " + projectProfile().title : "");
   usual.selected = !own;
   select.append(usual);
   for (const profile of menuProfiles()) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = profile.available ? profile.title : profile.title + " (not installed)";
+    option.textContent = profile.available ? profile.title : profile.title + "（未安装）";
     option.disabled = !profile.available && profile.id !== own?.id;
     option.selected = profile.id === own?.id;
     select.append(option);
@@ -2419,9 +2432,9 @@ function clipModel(clip) {
   hint.className = "hint";
   const describe = () => {
     const picked = profileOf(select.value);
-    if (!picked) hint.textContent = "Pick another model to render only this clip with it. Takes keep the model that made them.";
-    else if (!picked.available) hint.textContent = "Not installed. Needs " + picked.missing.join(" and ") + ".";
-    else hint.textContent = picked.hint + " The next render of this clip uses it. Switching between models loads the new one first, which takes a while.";
+    if (!picked) hint.textContent = "为此镜头单独选择模型。各素材版本保留其生成时的模型信息。";
+    else if (!picked.available) hint.textContent = "未安装。需要 " + picked.missing.join(" 和 ") + ".";
+    else hint.textContent = uiMessage(picked.hint) + "此镜头下次渲染将使用它。切换模型需先加载，可能需要一些时间。";
   };
   describe();
   select.addEventListener("change", () => {
@@ -2446,12 +2459,12 @@ function strengthSlider(key, label, value, [min, max], usual, onChange) {
   range.type = "range";
   range.dataset.key = key;
   range.setAttribute("aria-label", label);
-  range.title = "Double-click for " + usual.toFixed(2);
+  range.title = "双击恢复为 " + usual.toFixed(2);
   const amount = document.createElement("input");
   amount.type = "number";
   amount.className = "amount";
   amount.dataset.key = key + " amount";
-  amount.setAttribute("aria-label", label + ", as a number");
+  amount.setAttribute("aria-label", label + "，数值形式");
   for (const input of [range, amount]) {
     input.min = min;
     input.max = max;
@@ -2484,7 +2497,7 @@ function strengthSlider(key, label, value, [min, max], usual, onChange) {
 // When a LoRA joins a render, drawn as the render itself: the bar runs from its first step on the
 // left to its last on the right, and the lit part is where the LoRA works. The number is the start
 // as the file stores it, a sigma: 1 joins at once, lower joins later. Three chips set the usual starts.
-const LORA_STARTS = [[1, "At once"], [0.93, "After framing"], [0.7, "Details only"]];
+const LORA_STARTS = [[1, "立即加入"], [0.93, "构图后加入"], [0.7, "仅调整细节"]];
 
 // Renders sample with a video shift of 12, which keeps sigma high for most of the render: 0.93 is
 // about halfway, 0.75 already four fifths in. The bar shows how far into the render a start is.
@@ -2498,7 +2511,7 @@ function startControl(id, name, value, onChange) {
   const chips = document.createElement("div");
   chips.className = "start-chips";
   chips.setAttribute("role", "group");
-  chips.setAttribute("aria-label", "When " + name + " joins the render");
+  chips.setAttribute("aria-label", "设置 " + name + "加入渲染的时机");
   const bar = document.createElement("div");
   bar.className = "strength start-bar";
   const range = document.createElement("input");
@@ -2507,8 +2520,8 @@ function startControl(id, name, value, onChange) {
   range.max = 1;
   range.step = 0.01;
   range.dataset.key = "LoRA " + id + " start";
-  range.setAttribute("aria-label", name + " joins the render this far in");
-  range.title = "Drag right to let the model set the framing before the LoRA joins. Double-click for at once";
+  range.setAttribute("aria-label", name + "在此进度加入渲染");
+  range.title = "向右拖动，让模型先完成构图再加入 LoRA。双击设为立即加入。";
   const amount = document.createElement("input");
   amount.type = "number";
   amount.className = "amount";
@@ -2516,15 +2529,15 @@ function startControl(id, name, value, onChange) {
   amount.max = 1;
   amount.step = 0.05;
   amount.dataset.key = "LoRA " + id + " start amount";
-  amount.setAttribute("aria-label", name + " start, 1 for at once, lower for later");
+  amount.setAttribute("aria-label", name + "的起点：1 为立即，越低加入越晚");
   for (const input of [range, amount]) input.addEventListener("focus", () => checkpoint(), { once: true });
   bar.append(range, amount);
   const ends = document.createElement("div");
   ends.className = "start-ends";
   const first = document.createElement("span");
-  first.textContent = "First step";
+  first.textContent = "首步";
   const last = document.createElement("span");
-  last.textContent = "Last step";
+  last.textContent = "末步";
   ends.append(first, last);
   const say = document.createElement("p");
   say.className = "start-say";
@@ -2548,10 +2561,10 @@ function startControl(id, name, value, onChange) {
     range.style.setProperty("--from", String(sigmaToProgress(v)));
     range.style.setProperty("--to", "1");
     for (const [start, chip] of buttons) chip.setAttribute("aria-pressed", String(Math.abs(start - v) < 0.001));
-    say.textContent = v >= 1 ? "Works on every step, from the first."
-      : v >= 0.88 ? "The model sets the framing and pose alone, then the LoRA joins."
-        : v >= 0.55 ? "Joins only for the last steps: a light touch on fine detail."
-          : "Joins at the very end, so it does almost nothing.";
+    say.textContent = v >= 1 ? "从第一步开始，全程生效。"
+      : v >= 0.88 ? "先由模型确定构图和姿态，再加入 LoRA。"
+        : v >= 0.55 ? "仅在最后几步加入，轻微调整细节。"
+          : "仅在最末尾加入，影响很小。";
   };
   const set = (raw, from) => {
     const v = Math.round(Math.min(1, Math.max(0, Number(raw) || 0)) * 100) / 100;
@@ -2585,7 +2598,7 @@ function pickFile2(title, files, hint, favoritesKey = null, show = null) {
   const nameOf = show?.name || loraName;
   const whereOf = show?.where || ((file) => file.replaceAll("\\", "/").split("/").slice(0, -1).join("/"));
   const textOf = show?.text || ((file) => file);
-  search.placeholder = "Search " + files.length + " " + (files.length === 1 ? show?.noun?.[0] || "file" : show?.noun?.[1] || "files");
+  search.placeholder = "搜索 " + files.length + " " + (files.length === 1 ? show?.noun?.[0] || "file" : show?.noun?.[1] || "files");
   let active = 0;
   let shown = [];
   return new Promise((resolve) => {
@@ -2608,11 +2621,11 @@ function pickFile2(title, files, hint, favoritesKey = null, show = null) {
       // Favourites come first, each group in the order the folder lists them.
       if (stars) shown = [...shown.filter((f) => stars.has(f)), ...shown.filter((f) => !stars.has(f))];
       active = Math.min(active, Math.max(0, shown.length - 1));
-      $("pickerCount").textContent = words.length ? shown.length + " of " + files.length : "";
+      $("pickerCount").textContent = words.length ? shown.length + " / " + files.length : "";
       if (!shown.length) {
         const none = document.createElement("p");
         none.className = "empty";
-        none.textContent = "Nothing matches. Try fewer letters.";
+        none.textContent = "没有匹配结果，请缩短关键词。";
         list.replaceChildren(none);
         return;
       }
@@ -2638,8 +2651,8 @@ function pickFile2(title, files, hint, favoritesKey = null, show = null) {
         const star = document.createElement("button");
         star.className = "picker-star";
         star.setAttribute("aria-pressed", String(stars.has(file)));
-        star.setAttribute("aria-label", (stars.has(file) ? "Remove " : "Add ") + nameOf(file) + (stars.has(file) ? " from" : " to") + " favorites");
-        star.title = stars.has(file) ? "A favorite. Click to remove it" : "Make it a favorite, so it lists first";
+        star.setAttribute("aria-label", (stars.has(file) ? "移除 " : "添加 ") + nameOf(file) + (stars.has(file) ? "，起于 " : "，止于 ") + " 个收藏");
+        star.title = stars.has(file) ? "已收藏，点击取消" : "加入收藏，优先显示";
         star.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5l2.3 4.7 5.2.8-3.8 3.6.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.6 5.2-.8z"/></svg>';
         star.addEventListener("click", () => {
           if (stars.has(file)) stars.delete(file);
@@ -2682,7 +2695,7 @@ const loraTiming = new Set();
 // A clip's LoRAs in a few words: their names and strengths, the switched-off ones left out.
 function loraSummary(clip) {
   const rows = (clip.loras || []).filter((row) => row && typeof row.file === "string" && row.on !== false);
-  if (!rows.length) return (clip.loras || []).length ? "All off" : "None";
+  if (!rows.length) return (clip.loras || []).length ? "全部关闭" : "无";
   return rows.map((row) => loraName(row.file) + " " + (typeof row.strength === "number" ? row.strength : 1).toFixed(2)).join(", ");
 }
 
@@ -2720,26 +2733,26 @@ function loraSection(clip = null) {
       else state.project.realism = 0;
     }));
     const label = document.createElement("span");
-    label.textContent = "Realism Slider";
+    label.textContent = "写实增强";
     name.append(box, label);
     const note = document.createElement("span");
     note.className = "lora-note";
-    note.textContent = on ? "Finals only" : "Off";
+    note.textContent = on ? "仅用于成片" : "关闭";
     const reset = document.createElement("button");
     reset.className = "quiet small";
-    reset.textContent = "Reset";
-    reset.title = "Back to " + usual.toFixed(2);
+    reset.textContent = "重置";
+    reset.title = "恢复为 " + usual.toFixed(2);
     reset.hidden = !on || typeof state.project.realism !== "number" || state.project.realism === usual;
     reset.addEventListener("click", () => change(() => delete state.project.realism));
     head.append(name, note, reset);
-    row.append(head, strengthSlider("Realism", "Realism Slider strength on finals", state.project.realism ?? usual, limits.range, usual, (v) => {
+    row.append(head, strengthSlider("写实增强", "成片的写实增强强度", state.project.realism ?? usual, limits.range, usual, (v) => {
       if (v === usual) delete state.project.realism;
       else state.project.realism = v;
       reset.hidden = v === usual || v === 0;
       // Dragging it to zero switches it off, and dragging it up switches it on again.
       box.checked = v !== 0;
       row.classList.toggle("off", v === 0);
-      note.textContent = v === 0 ? "Off" : "Finals only";
+      note.textContent = v === 0 ? "关闭" : "仅用于成片";
     }));
     list.append(row);
   }
@@ -2767,8 +2780,8 @@ function loraSection(clip = null) {
     if (!found) {
       const note = document.createElement("span");
       note.className = "lora-note missing";
-      note.textContent = "Not installed";
-      note.title = "Renders leave it out until " + entry.file + " is in models/loras.";
+      note.textContent = "未安装";
+      note.title = "暂不用于渲染，请先将 " + entry.file + "放入 models/loras。";
       head.append(note);
     }
     // When it joins: on every step, or only after the first ones have set the composition.
@@ -2778,11 +2791,11 @@ function loraSection(clip = null) {
     const when = document.createElement("button");
     when.className = "quiet small start-toggle";
     when.dataset.key = "LoRA " + entry.id + " timing";
-    const startWords = (v) => (v < 1 ? "Starts at " + v.toFixed(2) : "Starts at once");
+    const startWords = (v) => (v < 1 ? "起始于 " + v.toFixed(2) : "立即加入");
     const whenText = document.createElement("span");
     whenText.textContent = startWords(start);
     when.append(whenText, icon("chevron"));
-    when.title = (timed ? "Hide" : "Set") + " when the LoRA joins the render: at once, on every step, or later, once the first steps have set the framing";
+    when.title = (timed ? "隐藏" : "设置") + " LoRA 加入渲染的时机：立即全程生效，或在构图完成后加入";
     when.setAttribute("aria-expanded", String(timed));
     when.addEventListener("click", () => {
       if (loraTiming.has(entry.id)) loraTiming.delete(entry.id);
@@ -2790,12 +2803,12 @@ function loraSection(clip = null) {
       renderInspector();
     });
     head.append(when);
-    head.append(trashButton("Remove " + loraName(entry.file), () => change(() => {
+    head.append(trashButton("移除 " + loraName(entry.file), () => change(() => {
       owner().loras = owner().loras.filter((r) => r !== live());
       if (clip && !owner().loras.length) delete owner().loras;
     })));
     const strength = typeof entry.strength === "number" ? entry.strength : 1;
-    row.append(head, strengthSlider("LoRA " + entry.id, loraName(entry.file) + " strength", strength, limits.lora_range, 1, (v) => (live().strength = v)));
+    row.append(head, strengthSlider("LoRA " + entry.id, loraName(entry.file) + "强度", strength, limits.lora_range, 1, (v) => (live().strength = v)));
     if (timed) {
       row.append(startControl(entry.id, loraName(entry.file), start, (v) => {
         if (v < 1) live().start_sigma = v;
@@ -2810,16 +2823,16 @@ function loraSection(clip = null) {
   if (rows.length >= limits.limit) {
     const full = document.createElement("p");
     full.className = "hint";
-    full.textContent = (clip ? "A clip" : "A project") + " takes up to " + limits.limit + " LoRAs. Remove one to add another.";
+    full.textContent = (clip ? "镜头" : "项目") + "最多使用 " + limits.limit + " 个 LoRA。请先移除一个。";
     children.push(full);
   } else if (free.length) {
     const add = document.createElement("button");
     add.className = "quiet wide";
-    add.textContent = "Add a LoRA";
+    add.textContent = "添加 LoRA";
     add.dataset.key = clip ? "Add a LoRA to this clip" : "Add a LoRA";
     add.addEventListener("click", async () => {
-      const file = await pickFile2(clip ? "Add a LoRA to " + clip.name : "Add a LoRA", free,
-        "From models/loras. Only LoRAs trained on MiniMax H3 have an effect. Star the ones you use, and they list first.", "h3take.loraFavorites");
+      const file = await pickFile2(clip ? "添加 LoRA 至 " + clip.name : "添加 LoRA", free,
+        "从 models/loras 选择。仅 MiniMax H3 训练的 LoRA 生效。收藏常用文件后会优先显示。", "h3take.loraFavorites");
       if (!file) return;
       change(() => {
         owner().loras = [...(owner().loras || []), { id: "l" + crypto.randomUUID().replaceAll("-", "").slice(0, 8), file, strength: 1, on: true }];
@@ -2829,12 +2842,12 @@ function loraSection(clip = null) {
   }
   const hint = document.createElement("p");
   hint.className = "hint";
-  if (clip) hint.textContent = "Only this clip samples with these, after the project's. Add one the project also has to give it another strength here, or untick it to leave it out of this clip.";
+  if (clip) hint.textContent = "这些 LoRA 仅用于此镜头，在项目 LoRA 之后生效。可用相同 LoRA 覆盖此镜头的强度，取消勾选可禁用。";
   else hint.textContent = state.loras.length
-    ? "Every new render samples with these, drafts and finals alike. They only work if they were trained on MiniMax H3."
-    : "Put LoRAs trained on MiniMax H3 in models/loras, then reload this page to add them here.";
+    ? "所有新渲染均使用这些 LoRA，包括草稿和成片。它们必须针对 MiniMax H3 训练。"
+    : "请将针对 MiniMax H3 训练的 LoRA 放入 models/loras，然后刷新页面。";
   children.push(hint);
-  return clip ? children : section("LoRAs", children, "layers");
+  return clip ? children : section("LoRA", children, "layers");
 }
 
 // Model patches: nodes of any installed pack that take the model and hand it back changed. A project
@@ -2849,7 +2862,7 @@ const patchFolds = new Set();
 // What a patch changes from its node's defaults, in a few words.
 function patchSummary(entry, known) {
   const set = known.controls.filter((c) => Object.hasOwn(entry.inputs || {}, c.name) && entry.inputs[c.name] !== c.default);
-  if (!set.length) return known.controls.length ? "Defaults" : "No settings";
+  if (!set.length) return known.controls.length ? "默认值" : "无可调设置";
   return set.map((c) => inputLabel(c.name) + " " + (typeof entry.inputs[c.name] === "boolean" ? (entry.inputs[c.name] ? "on" : "off") : entry.inputs[c.name])).join(", ");
 }
 
@@ -2861,7 +2874,7 @@ function patchControl(entry, control, write) {
   wrap.className = "patch-control" + (control.kind === "bool" ? " switch" : "");
   const title = document.createElement("span");
   title.textContent = inputLabel(control.name);
-  const key = "Patch " + entry.id + " " + control.name;
+  const key = "补丁 " + entry.id + " " + control.name;
   let input;
   if (control.kind === "choice") {
     input = document.createElement("select");
@@ -2871,7 +2884,7 @@ function patchControl(entry, control, write) {
     for (const text of lost ? [String(value), ...options] : options) {
       const option = document.createElement("option");
       option.value = text;
-      option.textContent = lost && text === String(value) ? text + " (not on offer)" : text;
+      option.textContent = lost && text === String(value) ? text + "（不可用）" : text;
       option.selected = text === String(value);
       input.append(option);
     }
@@ -2903,7 +2916,7 @@ function patchControl(entry, control, write) {
     if (typeof control.max === "number") input.max = control.max;
     input.step = typeof control.step === "number" && control.step > 0 ? control.step : whole ? 1 : "any";
     input.value = typeof value === "number" ? value : "";
-    const limits = [typeof control.min === "number" ? "from " + control.min : "", typeof control.max === "number" ? "to " + control.max : ""].filter(Boolean).join(" ");
+    const limits = [typeof control.min === "number" ? "从 " + control.min : "", typeof control.max === "number" ? "到 " + control.max : ""].filter(Boolean).join(" ");
     if (limits) input.placeholder = limits;
     const fits = (v) => Number.isFinite(v) && (!whole || Number.isInteger(v))
       && (typeof control.min !== "number" || v >= control.min) && (typeof control.max !== "number" || v <= control.max);
@@ -2924,8 +2937,8 @@ function patchControl(entry, control, write) {
   input.dataset.key = key;
   if (control.kind !== "choice" && control.kind !== "bool") input.addEventListener("focus", () => checkpoint(), { once: true });
   const tip = [control.tooltip || "", control.kind === "int" || control.kind === "float"
-    ? [typeof control.min === "number" ? "From " + control.min : "", typeof control.max === "number" ? "to " + control.max : ""].filter(Boolean).join(" ") : "",
-  "Usual: " + (control.default === "" ? "empty" : typeof control.default === "boolean" ? (control.default ? "on" : "off") : control.default)]
+    ? [typeof control.min === "number" ? "起于 " + control.min : "", typeof control.max === "number" ? "到 " + control.max : ""].filter(Boolean).join(" ") : "",
+  "默认：" + (control.default === "" ? "empty" : typeof control.default === "boolean" ? (control.default ? "on" : "off") : control.default)]
     .filter(Boolean).map((part) => part.replace(/[.\s]+$/, "")).join(". ") + ".";
   wrap.title = tip;
   if (control.kind === "bool") wrap.append(input, title);
@@ -2980,8 +2993,8 @@ function patchSection() {
     if (!known) {
       const note = document.createElement("span");
       note.className = "lora-note missing";
-      note.textContent = "Not installed";
-      note.title = "Renders leave it out until the pack with the node " + entry.node + " is installed in this ComfyUI.";
+      note.textContent = "未安装";
+      note.title = "暂不用于渲染，请先安装包含此节点的插件：" + entry.node + "。";
       head.append(note);
     }
     // The order matters to some patches: each one gets the model as the one above left it.
@@ -2998,14 +3011,14 @@ function patchSection() {
       const same = mine(by < 0 ? "up" : "down");
       (same && !same.disabled ? same : mine(by < 0 ? "down" : "up"))?.focus();
     };
-    const up = iconButton("up", "Move " + title + " up", () => move(-1));
+    const up = iconButton("up", "移动 " + title + "，上移", () => move(-1));
     up.dataset.key = "Patch " + entry.id + " up";
     up.disabled = index === 0;
-    const down = iconButton("chevron", "Move " + title + " down", () => move(1));
+    const down = iconButton("chevron", "移动 " + title + "，下移", () => move(1));
     down.dataset.key = "Patch " + entry.id + " down";
     down.disabled = index === rows.length - 1;
     if (rows.length > 1) head.append(up, down);
-    head.append(trashButton("Remove " + title, () => change(() => {
+    head.append(trashButton("移除 " + title, () => change(() => {
       state.project.patches = state.project.patches.filter((r) => r !== live());
       if (!state.project.patches.length) delete state.project.patches;
     })));
@@ -3023,10 +3036,10 @@ function patchSection() {
         const lost = document.createElement("div");
         lost.className = "patch-lost";
         const words = document.createElement("span");
-        words.textContent = "The node no longer takes " + stale.join(", ") + ". Renders are refused until " + (stale.length === 1 ? "it is" : "they are") + " dropped.";
+        words.textContent = "此节点不再接受参数 " + stale.join(", ") + "。暂时无法渲染，请先移除" + (stale.length === 1 ? "该参数" : "这些参数") + "。";
         const drop = document.createElement("button");
         drop.className = "quiet small";
-        drop.textContent = "Drop";
+        drop.textContent = "移除";
         drop.dataset.key = "Patch " + entry.id + " drop";
         drop.addEventListener("click", () => change(() => {
           for (const n of stale) delete live().inputs[n];
@@ -3043,7 +3056,7 @@ function patchSection() {
         const says = document.createElement("span");
         says.textContent = patchSummary(entry, known);
         fold.append(says, icon("chevron"));
-        fold.title = (open ? "Hide" : "Show") + " the settings of " + title;
+        fold.title = (open ? "隐藏" : "显示") + "以下项目的设置：" + title;
         fold.setAttribute("aria-expanded", String(open));
         fold.addEventListener("click", () => {
           const focus = rememberFocus();
@@ -3059,8 +3072,8 @@ function patchSection() {
         if (changed) {
           const reset = document.createElement("button");
           reset.className = "quiet small";
-          reset.textContent = "Reset";
-          reset.title = "Back to the node's own defaults";
+          reset.textContent = "重置";
+          reset.title = "恢复节点默认值";
           reset.dataset.key = "Patch " + entry.id + " reset";
           reset.addEventListener("click", () => change(() => {
             // The row stays folded or open as it is: with nothing set, the usual is the other way round.
@@ -3102,16 +3115,16 @@ function patchSection() {
   if (rows.length >= PATCH_LIMIT) {
     const full = document.createElement("p");
     full.className = "hint";
-    full.textContent = "A project takes up to " + PATCH_LIMIT + " model patches. Remove one to add another.";
+    full.textContent = "每个项目最多使用 " + PATCH_LIMIT + " 个模型补丁。请先移除一个。";
     children.push(full);
   } else if (state.patches.length) {
     const add = document.createElement("button");
     add.className = "quiet wide";
-    add.textContent = "Add a patch";
+    add.textContent = "添加补丁";
     add.dataset.key = "Add a patch";
     add.addEventListener("click", async () => {
-      const node = await pickFile2("Add a model patch", state.patches.map((p) => p.node),
-        "Nodes of the installed packs that take the model and plain values, and return the model. The ones for MiniMax H3 or attention list first. Star the ones you use.",
+      const node = await pickFile2("添加模型补丁", state.patches.map((p) => p.node),
+        "选择已安装插件中接收模型及普通参数、并返回模型的节点。优先显示 H3 或注意力相关节点；可收藏常用节点。",
         "h3take.patchFavorites", {
           name: (id) => patchOf(id)?.title || id,
           where: (id) => patchOf(id)?.pack || "",
@@ -3129,17 +3142,17 @@ function patchSection() {
   }
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "Every new render puts these on the model, in this order, after the LoRAs. The editor cannot tell whether a patch helps or harms: render a clip with it and without, and compare the time and the picture.";
+  hint.textContent = "每次渲染均在 LoRA 后按顺序应用这些补丁。编辑器无法判断效果优劣，请对比启用前后的耗时与画面。";
   children.push(hint);
   const active = rows.filter((r) => r.on !== false && patchOf(r.node)).length;
-  return disclosure("Model patches", rows.length > 0, rows.length ? active + " on" : "", children, "patch");
+  return disclosure("模型补丁", rows.length > 0, rows.length ? active + " on" : "", children, "patch");
 }
 
 function renderScene(panel, selected = false) {
   const head = document.createElement("div");
   head.className = "inspector-head";
   const title = document.createElement("h2");
-  title.textContent = "Project";
+  title.textContent = "项目";
   // What the project holds, in one line at the top, where it used to be a section at the bottom.
   const rendered = state.project.clips.filter((c) => c.takes.length).length;
   const clips = state.project.clips.length;
@@ -3148,21 +3161,21 @@ function renderScene(panel, selected = false) {
   line.className = "status";
   line.textContent = [
     timecode(sceneEnd()),
-    clips === 1 ? "1 clip" : clips + " clips",
-    clips ? rendered + " of " + clips + " rendered" : "",
-    cast ? (cast === 1 ? "1 in the cast" : cast + " in the cast") : "",
+    clips === 1 ? "1 个镜头" : clips + " 个镜头",
+    clips ? rendered + " / " + clips + "已渲染" : "",
+    cast ? (cast === 1 ? "1 个角色" : cast + " 个角色") : "",
   ].filter(Boolean).join(", ");
   const about = document.createElement("p");
   about.className = "status";
-  about.textContent = selected ? "Settings for every clip in this project." : "Select a clip to edit it. Press ? for shortcuts.";
+  about.textContent = selected ? "此项目所有镜头的默认设置。" : "选择镜头进行编辑。按 ? 查看快捷键。";
   head.append(title, line, about);
   const shape = document.createElement("label");
   shape.className = "choice";
   const shapeTitle = document.createElement("span");
-  shapeTitle.textContent = "Format";
+  shapeTitle.textContent = "画幅";
   const shapes = document.createElement("select");
   shapes.dataset.key = "Format";
-  for (const [value, label] of [["16:9", "Wide, 16:9"], ["9:16", "Vertical, 9:16"], ["1:1", "Square, 1:1"]]) {
+  for (const [value, label] of [["16:9", "横屏 16:9"], ["9:16", "竖屏 9:16"], ["1:1", "方形 1:1"]]) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
@@ -3179,11 +3192,11 @@ function renderScene(panel, selected = false) {
   shape.append(shapeTitle, shapes);
   const formatHint = document.createElement("p");
   formatHint.className = "hint";
-  formatHint.textContent = "New renders and imports use this shape. Export fits every clip to it.";
+  formatHint.textContent = "新渲染及导入素材使用此画幅；导出时会统一适配。";
   const model = document.createElement("label");
   model.className = "choice";
   const modelTitle = document.createElement("span");
-  modelTitle.textContent = "Model";
+  modelTitle.textContent = "模型";
   const models = document.createElement("select");
   models.dataset.key = "Model";
   // A project that names no model renders with the first one installed, as the server does.
@@ -3191,7 +3204,7 @@ function renderScene(panel, selected = false) {
   for (const profile of menuProfiles()) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = profile.available ? profile.title : profile.title + " (not installed)";
+    option.textContent = profile.available ? profile.title : profile.title + "（未安装）";
     option.disabled = !profile.available && profile.id !== current;
     option.selected = profile.id === current;
     models.append(option);
@@ -3201,8 +3214,8 @@ function renderScene(panel, selected = false) {
   const describeModel = () => {
     const profile = profileOf(models.value);
     if (!profile) modelHint.textContent = "";
-    else if (profile.available) modelHint.textContent = [profile.hint + " New renders use it.", ...state.finals, ...state.encoders.missing].join(" ");
-    else modelHint.textContent = "Not installed. Needs " + profile.missing.join(" and ") + ".";
+    else if (profile.available) modelHint.textContent = [uiMessage(profile.hint) + "新渲染使用此设置。", ...state.finals.map(modelNotice), ...state.encoders.missing.map(modelNotice)].join(" ");
+    else modelHint.textContent = "未安装。需要 " + profile.missing.join(" 和 ") + ".";
   };
   describeModel();
   models.addEventListener("change", () => {
@@ -3219,7 +3232,7 @@ function renderScene(panel, selected = false) {
   const manageModels = document.createElement("button");
   manageModels.type = "button";
   manageModels.className = "label-action";
-  manageModels.textContent = "Models and their settings";
+  manageModels.textContent = "模型与参数设置";
   manageModels.dataset.key = "Models";
   manageModels.addEventListener("click", (event) => {
     event.preventDefault();
@@ -3230,21 +3243,21 @@ function renderScene(panel, selected = false) {
   // Format and language side by side: the two things a project is made in.
   const made = document.createElement("div");
   made.className = "pair";
-  made.append(shape, field("Language", state.project.language || "", (v) => {
+  made.append(shape, field("对白语言", state.project.language || "", (v) => {
     if (v.trim()) state.project.language = v.trim();
     else delete state.project.language;
-  }, { placeholder: "English" }));
+  }, { placeholder: "英语（English）" }));
   // The text encoder, video VAE and projection are set once, if ever: they live in the Models dialog,
   // and the panel says what renders.
-  const files = state.profiles.length && encoderChoices().length ? [settingRow("settings", "Model files", modelFilesSummary(), () => {
+  const files = state.profiles.length && encoderChoices().length ? [settingRow("settings", "模型文件", modelFilesSummary(), () => {
     openModels(null);
     $("modelsBody").querySelector(".model-files")?.scrollIntoView({ block: "start" });
   })] : [];
   panel.replaceChildren(
     head,
-    section("Look", [field("Style for every clip", state.project.style, (v) => (state.project.style = v), { area: true })], "look"),
-    section("Format", [made, formatHint, ...sizeChoices()], "format"),
-    ...(state.profiles.length ? [section("Model", [model, modelHint, ...files], "model")] : []),
+    section("画面风格", [field("所有镜头的统一风格", state.project.style, (v) => (state.project.style = v), { area: true })], "look"),
+    section("画幅", [made, formatHint, ...sizeChoices()], "format"),
+    ...(state.profiles.length ? [section("模型", [model, modelHint, ...files], "model")] : []),
     ...[loraSection(), patchSection(), writingSection(), notesSection()].filter(Boolean),
   );
 }
@@ -3253,7 +3266,7 @@ function renderScene(panel, selected = false) {
 function modelFilesSummary() {
   const chosen = state.project.models || {};
   const named = ["clip", "vae", "projection"].filter((k) => chosen[k]).map((k) => fileName(chosen[k]));
-  return named.length ? named.join(", ") : "Automatic";
+  return named.length ? named.join(", ") : "自动选择";
 }
 
 // The sizes drafts and finals render at. The first of each list is the usual one, and a project
@@ -3261,7 +3274,7 @@ function modelFilesSummary() {
 function sizeChoices() {
   const table = state.sizes?.[state.project.format || "16:9"];
   if (!table) return [];
-  const names = { small: "Small", medium: "Medium", large: "Large", full: "Full", sharp: "Sharp" };
+  const names = { small: "小", medium: "中", large: "大", full: "完整精修", sharp: "锐化增强" };
   // A sharp final goes through RelayVSR, so it is on offer only where that is installed.
   const relay = (state.upscalers || []).find((row) => row.id === "relayvsr");
   // A size of the project's own is written "1024x576": what the server takes, checked the same way.
@@ -3289,7 +3302,7 @@ function sizeChoices() {
       option.selected = row.id === current;
       if (row.id === "sharp" && relay && !relay.installed) {
         option.disabled = row.id !== current;
-        option.textContent += " (needs RelayVSR)";
+        option.textContent += "（需要 RelayVSR）";
       }
       select.append(option);
     }
@@ -3297,7 +3310,7 @@ function sizeChoices() {
     if (own) {
       ownOption.value = "own";
       // The boxes under the menu show the numbers: the menu is too narrow for both.
-      ownOption.textContent = "Your own size";
+      ownOption.textContent = "自定义尺寸";
       ownOption.selected = !!mine;
       select.append(ownOption);
     }
@@ -3324,7 +3337,7 @@ function sizeChoices() {
     const says = (size) => {
       const format = (state.project.format || "16:9").split(":").map(Number);
       const off = Math.abs(size[0] / size[1] - format[0] / format[1]) > 0.04;
-      note.textContent = (size[0] * size[1] / 1e6).toFixed(2) + " megapixels" + (off ? ", not " + (state.project.format || "16:9") : "");
+      note.textContent = (size[0] * size[1] / 1e6).toFixed(2) + " 百万像素" + (off ? "，而非 " + (state.project.format || "16:9") : "");
     };
     const boxes = mine.map((side, n) => {
       const box = document.createElement("input");
@@ -3333,7 +3346,7 @@ function sizeChoices() {
       box.max = own.max;
       box.step = own.step;
       box.value = side;
-      box.setAttribute("aria-label", title + (n ? ", height" : ", width"));
+      box.setAttribute("aria-label", title + (n ? "，高度" : "，宽度"));
       box.addEventListener("change", () => {
         // Onto the grid H3 needs, whatever was typed.
         const size = boxes.map((b) => Math.min(own.max, Math.max(own.min, Math.round((Number(b.value) || 0) / own.step) * own.step)));
@@ -3354,17 +3367,17 @@ function sizeChoices() {
   hint.className = "hint";
   const full = table.final.find((row) => row.id === "full");
   const sharp = table.final.find((row) => row.id === "sharp");
-  hint.textContent = "New renders use these sizes. A smaller one needs less GPU memory and renders faster."
-    + (full ? " Full samples at " + full.width + " × " + full.height + ", then redraws its last steps at " + full.out[0] + " × " + full.out[1] + "." : "")
-    + (sharp ? " Sharp samples at the same size once, enlarges the picture two times with RelayVSR and scales it down to "
-      + sharp.out[0] + " × " + sharp.out[1] + ": quicker than Full, with crisper edges and the smoother skin of the sampled size."
-      + (relay && !relay.installed ? " It needs " + relay.missing.join(" and ") + " from " + relay.source + " on Hugging Face." : "") : "")
-    + (own ? " Your own size takes any width and height from " + own.min + " to " + own.max + " in steps of " + own.step
-      + ", and comes out as sampled." : "")
-    + " Steps are set per model, in Models and their settings.";
+  hint.textContent = "新渲染使用这些尺寸。尺寸越小，显存占用越少，速度越快。"
+    + (full ? "完整精修先以 " + full.width + " × " + full.height + "采样，再在最后几步重绘至 " + full.out[0] + " × " + full.out[1] + "." : "")
+    + (sharp ? "锐化增强仅采样一次，再使用 RelayVSR 放大两倍并缩放至 "
+      + sharp.out[0] + " × " + sharp.out[1] + "：速度较快、边缘更清晰，皮肤保留原采样的平滑效果。"
+      + (relay && !relay.installed ? "需要 " + relay.missing.join(" 和 ") + "，来源为 " + relay.source + "（Hugging Face）。" : "") : "")
+    + (own ? "自定义尺寸的宽高范围为 " + own.min + "至 " + own.max + "，步进为 " + own.step
+      + "，按采样尺寸输出。" : "")
+    + "各模型的步数可在“模型与参数设置”中调整。";
   const pair = document.createElement("div");
   pair.className = "pair";
-  pair.append(choice("draft", "Draft size"), choice("final", "Final size"));
+  pair.append(choice("draft", "草稿尺寸"), choice("final", "成片尺寸"));
   return [pair, hint];
 }
 
@@ -3375,7 +3388,7 @@ function renderBinPanel(panel, bin) {
   const name = document.createElement("input");
   name.className = "name-input";
   name.value = bin.name;
-  name.setAttribute("aria-label", "Bin name");
+  name.setAttribute("aria-label", "素材箱名称");
   name.dataset.key = "name";
   name.addEventListener("focus", () => checkpoint(), { once: true });
   name.addEventListener("input", () => {
@@ -3389,18 +3402,18 @@ function renderBinPanel(panel, bin) {
   });
   const row = document.createElement("div");
   row.className = "head-row";
-  row.append(name, trashButton("Delete bin", () => deleteBin(bin)));
+  row.append(name, trashButton("删除素材箱", () => deleteBin(bin)));
   const line = document.createElement("p");
   line.className = "status";
-  line.textContent = inside.length ? inside.length + (inside.length === 1 ? " clip" : " clips") : "Empty";
+  line.textContent = inside.length ? inside.length + (inside.length === 1 ? " 个镜头" : " 个镜头") : "空";
   head.append(row, line);
   const about = document.createElement("p");
   about.className = "hint";
-  about.textContent = "Drag clips onto this bin in the Clips panel to file them here, or onto the list below the bins to take them out. While the bin is selected, new clips and imports go in it.";
+  about.textContent = "将片段拖入素材箱归档；拖至素材箱下方列表可移出。选中素材箱时，新建和导入的片段会加入该箱。";
   const keep = document.createElement("p");
   keep.className = "hint";
-  keep.textContent = "Deleting the bin keeps its clips.";
-  panel.replaceChildren(head, section("Bin", [about, keep]));
+  keep.textContent = "删除素材箱不会删除其中的片段。";
+  panel.replaceChildren(head, section("素材箱", [about, keep]));
 }
 
 // What the inspector last showed, so a new selection starts at the top and on its own tab.
@@ -3470,8 +3483,8 @@ function helpToggle() {
   button.type = "button";
   button.className = "insp-help";
   button.setAttribute("aria-pressed", String(showHelp));
-  button.setAttribute("aria-label", "Help");
-  button.title = showHelp ? "Hide the explanations" : "Show the explanations under each setting";
+  button.setAttribute("aria-label", "帮助");
+  button.title = showHelp ? "隐藏说明" : "显示各项设置的说明";
   button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7M12 16.8h.01"/></svg>';
   button.addEventListener("click", () => {
     showHelp = !showHelp;
@@ -3500,7 +3513,7 @@ function drawInspector() {
       $("inspector").scrollTop = 0;
     }
     if (state.tab !== "project") state.tab = "shot";
-    renderTabs([["shot", "VFX"], ["project", "Project"]]);
+    renderTabs([["shot", "VFX"], ["project", "项目"]]);
     if (state.tab === "project") renderScene(panel, true);
     else renderEffect(panel, effect);
     return;
@@ -3514,13 +3527,13 @@ function drawInspector() {
   const placed = clip ? state.project.timeline.find((i) => i.id === state.item && i.clip === clip.id)
     || sorted().find((i) => i.clip === clip.id) || null : null;
   const tabs = [];
-  if (person) tabs.push(["shot", "Cast member"]);
-  else if (bin) tabs.push(["shot", "Bin"]);
-  else if (sound) tabs.push(["shot", "Sound"]);
-  else if (clip && clip.kind === "footage") tabs.push(["shot", "Footage"]);
-  else if (clip) tabs.push(["shot", "Shot"], ["takes", "Takes", clip.takes.length]);
-  if (placed) tabs.push(["timeline", "Timeline"]);
-  tabs.push(["project", "Project"]);
+  if (person) tabs.push(["shot", "角色"]);
+  else if (bin) tabs.push(["shot", "素材箱"]);
+  else if (sound) tabs.push(["shot", "音频"]);
+  else if (clip && clip.kind === "footage") tabs.push(["shot", "导入素材"]);
+  else if (clip) tabs.push(["shot", "镜头"], ["takes", "素材版本", clip.takes.length]);
+  if (placed) tabs.push(["timeline", "时间线"]);
+  tabs.push(["project", "项目"]);
   const key = person ? "p" + person.id : clip ? "c" + clip.id : bin ? "b" + bin.id : sound ? "s" + sound.id : "";
   if (key !== inspected) {
     if (key && state.tab === "project") state.tab = "shot";
@@ -3553,7 +3566,7 @@ function drawInspector() {
   const name = document.createElement("input");
   name.className = "name-input";
   name.value = clip.name;
-  name.setAttribute("aria-label", "Clip name");
+  name.setAttribute("aria-label", "镜头名称");
   name.dataset.key = "name";
   name.addEventListener("focus", () => checkpoint(), { once: true });
   name.addEventListener("input", () => {
@@ -3568,20 +3581,20 @@ function drawInspector() {
   line.textContent = status.text + ", " + clipSeconds(clip);
   const row = document.createElement("div");
   row.className = "head-row";
-  row.append(name, trashButton("Delete clip", () => deleteClip(clip)));
+  row.append(name, trashButton("删除镜头", () => deleteClip(clip)));
   head.append(row, line);
 
   const parts = [head];
   if (clip.error && !job) {
     const notice = document.createElement("p");
     notice.className = "notice";
-    notice.textContent = "The last render failed. " + clip.error;
+    notice.textContent = "上次渲染失败。" + clip.error;
     parts.push(notice);
   }
   if (isStale(clip) && !job) {
     const notice = document.createElement("p");
     notice.className = "notice";
-    notice.textContent = "The clip this one joins has changed, so the join may show. Render it again to fix that.";
+    notice.textContent = "相连的源片段已更改，衔接可能不连续，请重新渲染。";
     parts.push(notice);
   }
 
@@ -3589,29 +3602,29 @@ function drawInspector() {
     const take = activeTake(clip);
     const about = document.createElement("p");
     about.className = "hint";
-    about.textContent = "Imported from " + (take?.source || "a file") + ". Footage plays as it is. Select it on the timeline and use Extend or Bridge to generate new shots from it.";
-    if (state.tab === "timeline") parts.push(section("On the timeline", timelineControls(placed)));
-    else parts.push(section("Footage", [about]));
+    about.textContent = "导入自 " + (take?.source || "文件") + "。素材按原样播放。可在时间线上选择后，通过延伸或桥接生成新镜头。";
+    if (state.tab === "timeline") parts.push(section("时间线设置", timelineControls(placed)));
+    else parts.push(section("导入素材", [about]));
     panel.replaceChildren(...parts);
     return;
   }
-  if (state.tab === "timeline") parts.push(section("On the timeline", timelineControls(placed)));
+  if (state.tab === "timeline") parts.push(section("时间线设置", timelineControls(placed)));
 
   const timing = document.createElement("div");
   timing.className = "two";
   timing.append(
-    field("Camera", clip.camera, (v) => (clip.camera = v), { placeholder: "Slow push in" }),
-    field("Seconds", clip.seconds, (v) => {
+    field("运镜", clip.camera, (v) => (clip.camera = v), { placeholder: "缓慢推进" }),
+    field("时长（秒）", clip.seconds, (v) => {
       if (!(Number(v) >= 0.5 && Number(v) <= 60)) return;
       clip.seconds = Number(v);
       resizePlanned(clip);
     }, { type: "number" }),
   );
-  const happens = field("What happens", clip.action, (v) => (clip.action = v), { big: true, placeholder: "Describe what we see and hear, in the order it happens." });
+  const happens = field("画面描述", clip.action, (v) => (clip.action = v), { big: true, placeholder: "按发生顺序描述看到的画面与听到的声音。" });
   const happensLabel = happens.querySelector("span");
   happensLabel.classList.add("label-row");
   happensLabel.append(rewriteButton(clip));
-  if (state.tab === "shot") parts.push(section("Shot", [
+  if (state.tab === "shot") parts.push(section("镜头", [
     happens,
     timing,
     ...(state.project.cast?.some((p) => p.file || p.refmod) ? castPicker(clip) : []),
@@ -3619,46 +3632,46 @@ function drawInspector() {
   ], "shot"));
 
   const voiced = ["speaker", "dialogue", "sound", "music"].filter((k) => String(clip[k] || "").trim()).length;
-  if (state.tab === "shot") parts.push(disclosure("Dialogue and sound", voiced > 0, voiced ? voiced + " set" : "", [
-    field("Who speaks", clip.speaker, (v) => (clip.speaker = v), {
-      placeholder: (state.project.cast || []).some((p) => p.voice) ? "@" + state.project.cast.find((p) => p.voice).name + " uses their voice" : "The old keeper, low and gravelly",
+  if (state.tab === "shot") parts.push(disclosure("对白与声音", voiced > 0, voiced ? voiced + "已设置" : "", [
+    field("说话角色", clip.speaker, (v) => (clip.speaker = v), {
+      placeholder: (state.project.cast || []).some((p) => p.voice) ? "@" + state.project.cast.find((p) => p.voice).name + "将使用该角色的声音" : "年迈的守塔人，低沉沙哑",
     }),
-    field("What they say", clip.dialogue, (v) => (clip.dialogue = v), { area: true }),
-    field("Language", clip.language || "", (v) => {
+    field("台词", clip.dialogue, (v) => (clip.dialogue = v), { area: true }),
+    field("对白语言", clip.language || "", (v) => {
       if (v.trim()) clip.language = v.trim();
       else delete clip.language;
-    }, { placeholder: state.project.language || "English" }),
-    field("Sound", clip.sound, (v) => (clip.sound = v), { area: true, placeholder: "Rain on glass, distant thunder" }),
-    field("Music", clip.music, (v) => (clip.music = v), { placeholder: "None" }),
+    }, { placeholder: state.project.language || "英语（English）" }),
+    field("音频", clip.sound, (v) => (clip.sound = v), { area: true, placeholder: "雨打玻璃，远处雷声" }),
+    field("音乐", clip.music, (v) => (clip.music = v), { placeholder: "无" }),
   ], "speech"));
 
   if (state.tab === "shot") {
-    parts.push(disclosure("Picture to a track", Boolean(clip.track), clip.track ? "Set" : "", trackSection(clip), "wave"));
+    parts.push(disclosure("跟随录制音轨生成", Boolean(clip.track), clip.track ? "设置" : "", trackSection(clip), "wave"));
     // The clip's own model and LoRAs. The LoRAs, with their strengths and timing, are set in a dialog.
     const own = (clip.loras || []).length;
     const loras = state.loras.length || own
-      ? [settingRow("layers", "LoRAs", loraSummary(clip), () => openPanelDialog(
-        () => "LoRAs for " + (clipOf(clip.id)?.name || "this clip"),
+      ? [settingRow("layers", "LoRA", loraSummary(clip), () => openPanelDialog(
+        () => "以下对象的 LoRA：" + (clipOf(clip.id)?.name || "此镜头"),
         () => (clipOf(clip.id) ? loraSection(clipOf(clip.id)) : null)))]
       : [];
     const custom = Boolean(profileOf(clip.profile));
-    parts.push(disclosure("Model and LoRAs", custom || own > 0,
-      [custom ? profileOf(clip.profile).title : "", own ? (own === 1 ? "1 LoRA" : own + " LoRAs") : ""].filter(Boolean).join(", "),
+    parts.push(disclosure("模型与 LoRA", custom || own > 0,
+      [custom ? profileOf(clip.profile).title : "", own ? (own === 1 ? "1 个 LoRA" : own + " 个 LoRA") : ""].filter(Boolean).join(", "),
       [...clipModel(clip), ...loras], "model"));
   }
 
-  const seed = field("Seed", clip.seed ?? "", (v) => {
+  const seed = field("随机种子", clip.seed ?? "", (v) => {
     clip.seed = v.trim() === "" ? null : Number(v);
-  }, { type: "number", placeholder: "A new one each render" });
+  }, { type: "number", placeholder: "每次渲染随机" });
   if (state.tab !== "takes") {
     // Only the Takes tab lists them.
   } else if (clip.takes.length) {
-    parts.push(section("Takes", [...versions(clip), seed]));
+    parts.push(section("素材版本", [...versions(clip), seed]));
   } else {
     const none = document.createElement("p");
     none.className = "hint";
-    none.textContent = "No takes yet. Render a draft to make the first one.";
-    parts.push(section("Takes", [none, seed]));
+    none.textContent = "暂无素材版本。渲染草稿后会生成第一个版本。";
+    parts.push(section("素材版本", [none, seed]));
   }
 
   const foot = document.createElement("div");
@@ -3673,12 +3686,12 @@ function drawInspector() {
     progress.textContent = status.text;
     const cancel = document.createElement("button");
     cancel.className = "quiet";
-    cancel.textContent = "Cancel render";
+    cancel.textContent = "取消渲染";
     cancel.addEventListener("click", () => cancelJob(job));
     actions.append(cancel);
     foot.append(progress);
   } else {
-    for (const [quality, label, style] of [["draft", "Render draft", "quiet"], ["final", "Render final", "primary"]]) {
+    for (const [quality, label, style] of [["draft", "渲染草稿", "quiet"], ["final", "渲染成片", "primary"]]) {
       const button = document.createElement("button");
       button.className = style;
       button.textContent = label;
@@ -3706,7 +3719,7 @@ function drawInspector() {
         }
       };
       const which = document.createElement("select");
-      which.setAttribute("aria-label", "Upscaler");
+      which.setAttribute("aria-label", "超分模型");
       const chosen = remembered("h3.upscaler", upscalers[0].id);
       for (const row of upscalers) {
         const option = document.createElement("option");
@@ -3717,10 +3730,10 @@ function drawInspector() {
       }
       // RelayVSR only: how much of the detail it adds is kept. All of it sharpens most, and can age a face.
       const detail = document.createElement("select");
-      detail.setAttribute("aria-label", "How much detail the upscale adds");
-      detail.title = "How much of the detail the upscaler adds is kept. More is sharper; on a face, all of it brings out pores and shine and can make it look older.";
+      detail.setAttribute("aria-label", "超分细节保留量");
+      detail.title = "控制超分所增加的细节保留程度。数值越高越清晰，但面部的毛孔与反光也会更明显，可能显老。";
       const kept = remembered("h3.upscaleDetail", "0.5");
-      for (const [value, label] of [["0.25", "A little detail"], ["0.5", "Some detail"], ["0.75", "More detail"], ["1", "All detail"]]) {
+      for (const [value, label] of [["0.25", "少量细节"], ["0.5", "适量细节"], ["0.75", "较多细节"], ["1", "全部细节"]]) {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = label;
@@ -3730,13 +3743,13 @@ function drawInspector() {
       detail.addEventListener("change", () => remember("h3.upscaleDetail", detail.value));
       const button = document.createElement("button");
       button.className = "quiet";
-      button.textContent = "Upscale 2x";
+      button.textContent = "超分 2 倍";
       const settle = () => {
         const row = upscalers.find((r) => r.id === which.value) || upscalers[0];
         detail.hidden = !row.detail;
-        which.title = row.about;
-        button.title = "Enlarge this final to " + 2 * shape[0] + " x " + 2 * shape[1] + " with " + row.title + ". " + row.about
-          + " It becomes a new take; do it once the cut is settled.";
+        which.title = uiMessage(row.about);
+        button.title = "将此成片放大至 " + 2 * shape[0] + " x " + 2 * shape[1] + "，使用 " + row.title + "。" + uiMessage(row.about)
+          + "，生成一个新版本。建议剪辑确定后再执行。";
       };
       which.addEventListener("change", () => {
         remember("h3.upscaler", which.value);
@@ -3748,7 +3761,7 @@ function drawInspector() {
       upscale = document.createElement("div");
       upscale.className = "actions upscale-row";
       upscale.setAttribute("role", "group");
-      upscale.setAttribute("aria-label", "Upscale this final");
+      upscale.setAttribute("aria-label", "对此成片超分");
       upscale.append(which, detail, button);
     }
   }
@@ -3777,7 +3790,7 @@ function cycleTake(step) {
   const index = clip.takes.indexOf(activeTake(clip));
   const take = clip.takes[(index + step + clip.takes.length) % clip.takes.length];
   chooseTake(clip, take);
-  toast("Take " + (clip.takes.indexOf(take) + 1) + " of " + clip.takes.length);
+  toast("版本 " + (clip.takes.indexOf(take) + 1) + " / " + clip.takes.length);
 }
 
 function versions(clip) {
@@ -3796,13 +3809,13 @@ function versions(clip) {
     img.style.setProperty("--frame", String(shape));
     skim(img, take, "contain");
     const label = document.createElement("span");
-    label.textContent = "Take " + (index + 1) + ", " + take.quality;
+    label.textContent = "版本 " + (index + 1) + ", " + take.quality;
     const madeWith = take.models?.profile_title || profileOf(take.models?.profile)?.title;
     const patched = (take.models?.patches || []).map((row) => patchOf(row.node)?.title || row.node);
-    if (madeWith) label.title = "Made with " + madeWith + (take.models?.steps ? ", " + take.models.steps + " steps, " + take.models.sampler : "")
-      + (patched.length ? ", patched with " + patched.join(", ") : "");
+    if (madeWith) label.title = "生成配置：" + madeWith + (take.models?.steps ? ", " + take.models.steps + " 步，" + take.models.sampler : "")
+      + (patched.length ? "，模型补丁：" + patched.join(", ") : "");
     const seed = document.createElement("small");
-    seed.textContent = "Seed " + take.seed;
+    seed.textContent = "种子 " + take.seed;
     button.append(img, label, seed);
     button.addEventListener("click", () => chooseTake(clip, take));
     takes.append(button);
@@ -3820,33 +3833,33 @@ function versions(clip) {
     tools.append(element);
     return element;
   };
-  button("Keep seed", () => {
+  button("固定种子", () => {
     checkpoint();
     clip.seed = current.seed;
     save();
     renderInspector();
-    toast("Renders of this clip now use seed " + current.seed + ".");
-  }, false, "pin", "Render this clip again with the seed of the take shown");
-  button("Restore prompt", () => {
+    toast("此镜头后续渲染使用种子 " + current.seed + ".");
+  }, false, "pin", "使用当前版本的种子重新渲染此镜头");
+  button("恢复提示词", () => {
     checkpoint();
     for (const name of SAVED_FIELDS) {
       if (current.saved && name in current.saved) clip[name] = current.saved[name];
     }
     save();
     renderInspector();
-  }, !current.saved, "restore", "Put back the text this take was rendered from");
+  }, !current.saved, "restore", "恢复生成此版本时使用的文字");
   // Deleting sits apart from the safe actions, at the end of the row.
   const spacer = document.createElement("span");
   spacer.className = "spacer";
   tools.append(spacer);
-  const remove = trashButton("Delete take " + (clip.takes.indexOf(current) + 1), () => {
+  const remove = trashButton("删除版本 " + (clip.takes.indexOf(current) + 1), () => {
     checkpoint();
     const number = clip.takes.indexOf(current) + 1;
     clip.takes = clip.takes.filter((t) => t !== current);
     clip.active = clip.takes.at(-1)?.id ?? null;
     save();
     renderAll();
-    toast("Deleted take " + number + " of " + clip.name + ".", false, undoAction);
+    toast("已删除版本 " + number + " / " + clip.name + ".", false, undoAction);
   });
   remove.disabled = clip.takes.length < 2;
   tools.append(remove);
@@ -3874,7 +3887,7 @@ function setTransition(item, type, frames) {
   const before = previousItem(item);
   const old = item.transition?.frames || 0;
   if (type !== "none" && (!before || itemEnd(before) < item.start + old)) {
-    toast("Put this clip right after another one to add a transition.", true);
+    toast("请将此片段紧接在另一个片段后，以添加转场。", true);
     renderInspector();
     return;
   }
@@ -3904,14 +3917,14 @@ function timelineControls(item) {
   percent.max = "400";
   percent.step = "5";
   percent.value = String(Math.round(speedOf(item) * 100));
-  percent.setAttribute("aria-label", "Speed in percent");
+  percent.setAttribute("aria-label", "速度百分比");
   percent.addEventListener("change", () => {
     checkpoint();
     setSpeed(item, Number(percent.value) / 100 || 1);
     percent.value = String(Math.round(speedOf(item) * 100));
   });
   const label = document.createElement("span");
-  label.textContent = "Speed %";
+  label.textContent = "速度（%）";
   speeds.append(label, percent);
   for (const value of [50, 100, 200]) {
     const preset = document.createElement("button");
@@ -3928,10 +3941,10 @@ function timelineControls(item) {
   const row = document.createElement("div");
   row.className = "speeds transition";
   const name = document.createElement("span");
-  name.textContent = "Transition in";
+  name.textContent = "入场转场";
   const kind = document.createElement("select");
-  kind.setAttribute("aria-label", "Transition in");
-  for (const [value, text] of [["none", "None"], ["dissolve", "Dissolve"], ["black", "Dip to black"], ["wipe", "Wipe"]]) {
+  kind.setAttribute("aria-label", "入场转场");
+  for (const [value, text] of [["none", "无"], ["dissolve", "叠化"], ["black", "淡入黑场"], ["wipe", "擦除"]]) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = text;
@@ -3943,7 +3956,7 @@ function timelineControls(item) {
   length.min = "2";
   length.step = "2";
   length.value = String(item.transition?.frames || 12);
-  length.setAttribute("aria-label", "Transition length in frames");
+  length.setAttribute("aria-label", "转场时长（帧）");
   const apply = () => {
     checkpoint();
     setTransition(item, kind.value, Number(length.value) || 12);
@@ -3951,7 +3964,7 @@ function timelineControls(item) {
   kind.addEventListener("change", apply);
   length.addEventListener("change", apply);
   const unit = document.createElement("span");
-  unit.textContent = "frames";
+  unit.textContent = "帧";
   row.append(name, kind, length, unit);
   box.append(speeds, row);
   const use = takeUse(item);
@@ -3967,7 +3980,7 @@ function takeUse(item) {
   const box = document.createElement("div");
   box.className = "take-use";
   const title = document.createElement("span");
-  title.textContent = "Part of the take";
+  title.textContent = "素材使用范围";
   const bar = document.createElement("div");
   bar.className = "take-bar";
   const win = document.createElement("div");
@@ -3984,15 +3997,15 @@ function takeUse(item) {
     const before = item.in - room.first;
     const after = room.last - item.out;
     note.textContent = !before && !after
-      ? "The clip shows its whole take."
-      : "Shows " + (item.out - item.in) + " of " + total + " frames: " + before + " unused before, " + after + " after. "
-        + "Drag the window, Alt-drag the clip, or press , and . to show another part. The clip keeps its place and length.";
+      ? "此片段已使用整个素材版本。"
+      : "已使用 " + (item.out - item.in) + " / " + total + " 帧，前方剩余 " + before + " 帧，后方剩余 " + after + " 帧。"
+        + "拖动范围窗口、按住 Alt 拖动片段，或按 , 和 . 选择其他范围。片段位置和时长保持不变。";
   };
   say();
   const free = room.before || room.after;
   win.tabIndex = free ? 0 : -1;
   win.setAttribute("role", "slider");
-  win.setAttribute("aria-label", "Part of the take the clip shows");
+  win.setAttribute("aria-label", "此片段使用的素材范围");
   win.setAttribute("aria-valuemin", "0");
   win.setAttribute("aria-valuemax", String(total - (item.out - item.in)));
   win.setAttribute("aria-valuenow", String(item.in - room.first));
@@ -4038,7 +4051,7 @@ function takeUse(item) {
 }
 
 function framesFor(clip) {
-  const slots = [["first", "First frame"], ["last", "Last frame"]].filter(([side]) => frameUsable(clip, side));
+  const slots = [["first", "首帧"], ["last", "尾帧"]].filter(([side]) => frameUsable(clip, side));
   if (!slots.length) return [];
   const row = document.createElement("div");
   row.className = "frames";
@@ -4144,7 +4157,7 @@ function layoutSoundLanes(count) {
     for (let n = 0; n < count; n++) {
       const head = document.createElement("div");
       head.className = "tl-head extra";
-      head.textContent = "Sound " + (n + 2);
+      head.textContent = "音轨 " + (n + 2);
       heads.append(head);
       const lane = document.createElement("div");
       lane.className = "lane a extra";
@@ -4177,7 +4190,7 @@ function renderSounds() {
     block.tabIndex = 0;
     block.setAttribute("role", "button");
     block.setAttribute("aria-pressed", String(selected));
-    block.setAttribute("aria-label", sound.name + ", extra sound on lane " + ((sound.lane || 0) + 2) + ", at " + timecode(sound.start) + " on the timeline");
+    block.setAttribute("aria-label", sound.name + "，附加音频，位于音轨 " + ((sound.lane || 0) + 2) + "，起点 " + timecode(sound.start) + "，位于时间线");
     const canvas = document.createElement("canvas");
     // The waveform reads the same loudness file a clip's does, made when the sound was added.
     const from = (sound.offset || 0) * FPS;
@@ -4219,7 +4232,7 @@ function removeSound(id) {
   state.sound = null;
   save();
   renderAll();
-  toast("Removed " + sound.name + " from the timeline.", false, undoAction);
+  toast("已移除 " + sound.name + "的时间线引用。", false, undoAction);
 }
 
 function bindSound(block, id) {
@@ -4288,7 +4301,7 @@ function bindSound(block, id) {
 async function addSound() {
   const file = await pickFile($("soundFile"));
   if (!file) return;
-  toast("Adding " + file.name + ".");
+  toast("正在添加 " + file.name + ".");
   try {
     const form = new FormData();
     form.append("file", file);
@@ -4299,12 +4312,12 @@ async function addSound() {
     const clear = (lane) => !sounds.some((s) => (s.lane || 0) === lane && s.start < start + frames && start < s.start + s.frames);
     const lane = [...Array(SOUND_LANES).keys()].find(clear) ?? 0;
     checkpoint();
-    const sound = { id: uid("s"), name: file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "Sound", file: asset.file, subfolder: asset.subfolder,
+    const sound = { id: uid("s"), name: file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "音频", file: asset.file, subfolder: asset.subfolder,
       seconds: asset.seconds, start, offset: 0, frames, gain: 1, lane };
     state.project.sounds = [...sounds, sound];
     save();
     selectSound(sound.id);
-    toast(sound.name + " is on the timeline, on Sound " + (lane + 2) + ". Drag it to move it, and its ends to trim it.");
+    toast(sound.name + "已加入时间线的音轨 " + (lane + 2) + "。拖动可移动位置，拖动两端可裁剪。");
   } catch (error) {
     toast(error.message, true);
   }
@@ -4317,7 +4330,7 @@ function renderSoundPanel(panel, sound) {
   const name = document.createElement("input");
   name.className = "name-input";
   name.value = sound.name;
-  name.setAttribute("aria-label", "Sound name");
+  name.setAttribute("aria-label", "音频名称");
   name.dataset.key = "name";
   name.addEventListener("focus", () => checkpoint(), { once: true });
   name.addEventListener("input", () => {
@@ -4327,27 +4340,27 @@ function renderSoundPanel(panel, sound) {
   });
   const row = document.createElement("div");
   row.className = "head-row";
-  row.append(name, trashButton("Remove this sound from the timeline", () => removeSound(sound.id)));
+  row.append(name, trashButton("从时间线移除此音频", () => removeSound(sound.id)));
   const line = document.createElement("p");
   line.className = "status";
-  line.textContent = "Extra sound, " + (sound.frames / FPS).toFixed(1) + " s of " + sound.seconds.toFixed(1) + " s, from " + timecode(sound.start);
+  line.textContent = "附加音频：" + (sound.frames / FPS).toFixed(1) + " 秒，总长 " + sound.seconds.toFixed(1) + " 秒，起于 " + timecode(sound.start);
   head.append(row, line);
   const volume = document.createElement("label");
   volume.className = "field";
   const volumeTitle = document.createElement("span");
-  volumeTitle.textContent = "Volume";
+  volumeTitle.textContent = "音量";
   volume.append(volumeTitle);
-  const lanes = [...Array(SOUND_LANES).keys()].map((n) => [String(n), "Sound " + (n + 2)]);
-  const lane = choice("Lane", lanes, String(sound.lane || 0), (value) => {
+  const lanes = [...Array(SOUND_LANES).keys()].map((n) => [String(n), "音轨 " + (n + 2)]);
+  const lane = choice("轨道", lanes, String(sound.lane || 0), (value) => {
     live().lane = Number(value);
     renderTimeline();
   });
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "Drag it on the timeline to move it, up or down to change its lane, and drag its ends to trim it. The export mixes it under the clips' own sound and stops it where the cut ends. Above 1 it is louder in the export; the preview tops out at 1.";
-  panel.replaceChildren(head, section("Sound", [
+  hint.textContent = "在时间线上拖动可移动位置，上下拖动可换轨，两端可裁剪。导出时会混入片段原声并在剪辑结束时停止。大于 1 的音量仅在导出时生效，预览音量上限为 1。";
+  panel.replaceChildren(head, section("音频", [
     volume,
-    strengthSlider("Sound volume", sound.name + " volume", typeof sound.gain === "number" ? sound.gain : 1, [0, 2], 1, (v) => (live().gain = v)),
+    strengthSlider("音频音量", sound.name + "的音量", typeof sound.gain === "number" ? sound.gain : 1, [0, 2], 1, (v) => (live().gain = v)),
     lane,
     hint,
   ]));
@@ -4534,7 +4547,7 @@ function renderTimeline() {
     block.tabIndex = 0;
     block.setAttribute("role", "button");
     block.setAttribute("aria-pressed", String(item.id === state.item));
-    block.setAttribute("aria-label", clip.name + ", " + clipStatus(clip).text + ", at " + timecode(item.start) + " on the timeline");
+    block.setAttribute("aria-label", clip.name + ", " + clipStatus(clip).text + "，起点 " + timecode(item.start) + "，位于时间线");
     block.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
@@ -4561,7 +4574,7 @@ function renderTimeline() {
     }
     const name = document.createElement("div");
     name.className = "name";
-    name.textContent = status === "stale" ? clip.name + ", source changed" : clip.name;
+    name.textContent = status === "stale" ? clip.name + "，源素材已更改" : clip.name;
     if (speedOf(item) !== 1) {
       const rate = document.createElement("span");
       rate.className = "rate";
@@ -4574,15 +4587,15 @@ function renderTimeline() {
       const grade = document.createElement("div");
       const final = take.quality === "final";
       grade.className = "grade " + (final ? "final" : "draft");
-      grade.textContent = final ? "Final" : "Draft";
-      grade.title = final ? "A final render" : "A draft. Render a final when the shot is right.";
+      grade.textContent = final ? "成片" : "草稿";
+      grade.title = final ? "成片版本" : "草稿版本。确认镜头效果后可渲染成片。";
       block.append(grade);
     }
     if (item.transition) {
       const mark = document.createElement("div");
       mark.className = "tr";
       mark.style.width = px(item.transition.frames) + "px";
-      mark.title = item.transition.type + ", " + item.transition.frames + " frames";
+      mark.title = uiMessage(item.transition.type) + "，" + item.transition.frames + " 帧";
       block.append(mark);
     }
     if (job && state.running === job) {
@@ -4623,13 +4636,13 @@ function renderTimeline() {
     hint.style.width = space + "px";
     const go = document.createElement("button");
     go.className = "gap-bridge";
-    const what = "Generate a bridge: a clip that connects " + clipOf(before.clip).name + " to " + clipOf(after.clip).name;
+    const what = "生成桥接片段，连接 " + clipOf(before.clip).name + "至 " + clipOf(after.clip).name;
     go.setAttribute("aria-label", what);
     go.title = what;
     go.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg>';
     if (space >= 170) {
       const label = document.createElement("span");
-      label.textContent = "Generate a bridge";
+      label.textContent = "生成桥接";
       go.append(label);
     }
     go.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -4649,11 +4662,11 @@ function renderTimeline() {
     mark.className = "cut-score" + (found.score < CUT_BAD ? " bad" : "");
     mark.style.left = px(cut.after.start) + "px";
     mark.textContent = found.score;
-    const names = clipOf(cut.before.clip).name + " to " + clipOf(cut.after.clip).name;
+    const names = clipOf(cut.before.clip).name + "至 " + clipOf(cut.after.clip).name;
     const why = found.kind === "jump"
-      ? "Jump cut: " + (found.notes.join(", ") || "the same shot, not continuous") + ". Extend the first clip so the second continues from its last frame, or change the framing."
+      ? "跳切：" + (found.notes.join(", ") || "同一机位的画面不连续") + "。可延伸前一个片段，让后一个从其尾帧接续，或改变构图。"
       : found.notes.join(", ") || found.kind;
-    mark.title = "Cut score " + found.score + " of 100, " + names + ". " + why;
+    mark.title = "衔接评分 " + found.score + " / 100，" + names + ". " + why;
     mark.setAttribute("aria-label", mark.title);
     mark.addEventListener("pointerdown", (event) => event.stopPropagation());
     mark.addEventListener("click", () => {
@@ -4672,12 +4685,12 @@ function renderTimeline() {
     const mark = document.createElement("button");
     mark.className = "soft-mark drift-mark";
     mark.style.left = px(row.item.start + (itemEnd(row.item) - row.item.start) / 2) + "px";
-    mark.textContent = "Drift";
+    mark.textContent = "画面漂移";
     const amount = Math.round(Math.abs(found.drift.change) * 100);
     const first = state.project.timeline.find((item) => item.id === found.drift.root);
-    mark.title = clipOf(row.item.clip).name + " has drifted from " + (first ? clipOf(first.clip).name : "the take its shot began with")
-      + ": its picture is " + amount + "% " + (found.drift.change > 0 ? "harsher, which shows as shine and deeper lines on a face" : "softer")
-      + ". Each extension adds to it on this model. Render these lines as a clip of their own from a first frame, or render the shot on a model that holds it.";
+    mark.title = clipOf(row.item.clip).name + "相较于 " + (first ? clipOf(first.clip).name : "该镜头的初始素材版本")
+      + "发生漂移：画面 " + amount + "% " + (found.drift.change > 0 ? "更生硬，面部反光及纹路更明显" : "softer")
+      + "。此模型的每次延伸可能累积漂移。可从首帧独立生成，或改用连续性更好的模型。";
     mark.setAttribute("aria-label", mark.title);
     mark.addEventListener("pointerdown", (event) => event.stopPropagation());
     mark.addEventListener("click", () => {
@@ -4694,10 +4707,10 @@ function renderTimeline() {
     const mark = document.createElement("button");
     mark.className = "soft-mark";
     mark.style.left = px(row.item.start + (itemEnd(row.item) - row.item.start) / 2) + "px";
-    mark.textContent = "Soft";
+    mark.textContent = "偏模糊";
     const draft = row.take.quality === "draft";
-    mark.title = clipOf(row.item.clip).name + " is soft next to the rest of the cut: " + Math.round(found.part * 100) + "% of its fine detail. "
-      + (draft ? "It is a draft among finals: render a final." : "Its picture is smaller than the cut's, or blurred.");
+    mark.title = clipOf(row.item.clip).name + "比其他片段模糊，其精细度为 " + Math.round(found.part * 100) + "%。"
+      + (draft ? "这是混在成片中的草稿，请渲染成片。" : "其分辨率较低，或画面本身模糊。");
     mark.setAttribute("aria-label", mark.title);
     mark.addEventListener("pointerdown", (event) => event.stopPropagation());
     mark.addEventListener("click", () => {
@@ -4713,10 +4726,10 @@ function renderTimeline() {
     const effect = effectOf(row.effect);
     if (!effect || activeTake(effect)?.id !== row.take || row.score === null || row.score >= CUT_FINE) continue;
     const at = row.edge === "start" ? effect.start : effect.start + effect.frames;
-    const why = (row.edge === "start" ? "Cut into " : "Cut out of ") + effect.name + ". "
-      + (row.kind === "jump" ? "Jump cut: " + (row.notes.join(", ") || "the same shot, not continuous") + ". Make the VFX clip start and end on the picture under it, or move it to a cut."
+    const why = (row.edge === "start" ? "切入 " : "切出 ") + effect.name + ". "
+      + (row.kind === "jump" ? "跳切：" + (row.notes.join(", ") || "同一机位的画面不连续") + "。可让 VFX 的首尾匹配底层画面，或将其移到剪辑点。"
         : row.notes.join(", ") || row.kind);
-    blocks.push(cutMark(at, row.score, "Cut score " + row.score + " of 100. " + why, () => selectEffect(effect.id)));
+    blocks.push(cutMark(at, row.score, "衔接评分 " + row.score + " / 100。" + why, () => selectEffect(effect.id)));
   }
   for (const row of cutExtras.inside) {
     const item = state.project.timeline.find((i) => i.id === row.item);
@@ -4726,8 +4739,8 @@ function renderTimeline() {
       blocks.push(...stillMarks(item, row, at));
       continue;
     }
-    const why = clipOf(item.clip).name + " changes picture inside the take: " + row.notes.join(", ")
-      + ". Trim the clip to end before it, or render it again with another seed.";
+    const why = clipOf(item.clip).name + "在素材内部发生画面变化：" + row.notes.join(", ")
+      + "。可在变化前裁剪结束，或更换种子重新渲染。";
     blocks.push(cutMark(at, row.score, why, () => {
       state.clip = item.clip;
       state.item = item.id;
@@ -4797,9 +4810,9 @@ function findings() {
   // What a cut sounds like, how the camera's move carries across it, and what stops or starts moving inside the frame.
   // Each is scored by itself (see listen.py and cuts.py), so a cut that looks clean can still be listed here.
   const beside = [
-    ["sound", (row) => ({ "level jump": "Sound jumps", dropout: "Sound drops out", "new sound": "Sound changes" }[row.kind] || "Sound")],
-    ["movement", () => "Camera move breaks"],
-    ["parts", () => "Movement breaks"],
+    ["sound", (row) => ({ "level jump": "音量突变", dropout: "声音中断", "new sound": "声音变化" }[row.kind] || "音频")],
+    ["movement", () => "运镜中断"],
+    ["parts", () => "运动中断"],
   ];
   for (const cut of touchingCuts()) {
     const scored = cutScores.get(cut.key);
@@ -4808,7 +4821,7 @@ function findings() {
       const row = scored[key];
       if (!row || row.score === null || row.score === undefined || row.score >= CUT_FINE) continue;
       found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: cut.after.start,
-        title: title(row) + ", " + clipOf(cut.before.clip).name + " to " + clipOf(cut.after.clip).name,
+        title: title(row) + ", " + clipOf(cut.before.clip).name + "至 " + clipOf(cut.after.clip).name,
         detail: row.notes.join(", ") || row.kind, act: () => { jumpTo(cut.before, cut.after.start - 1)(); } });
     }
   }
@@ -4817,24 +4830,24 @@ function findings() {
     if (!item || activeTake(clipOf(item.clip))?.id !== row.take || row.kind === "arrives" || row.score >= CUT_FINE) continue;
     const at = itemEnd(item);
     found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: at,
-      title: clipOf(item.clip).name + " does not arrive on the next clip", detail: row.notes.join(", "), act: jumpTo(item, at - 1) });
+      title: clipOf(item.clip).name + "未能衔接下一个片段", detail: row.notes.join(", "), act: jumpTo(item, at - 1) });
   }
   for (const row of cutExtras.soundInside) {
     const item = state.project.timeline.find((i) => i.id === row.item);
     if (!item || activeTake(clipOf(item.clip))?.id !== row.take) continue;
     const name = clipOf(item.clip).name;
-    const title = { chop: " has its sound cut off", dropout: " loses its sound", swell: " ends much louder than it begins",
-      fade: " ends much quieter than it begins" }[row.kind];
+    const title = { chop: "的声音被截断", dropout: "的声音中断", swell: "的尾部音量明显更大",
+      fade: "的尾部音量明显更小" }[row.kind];
     if (!title) continue;
     // A sound cut off is a guess from the level alone, so it asks for a listen. A hole in the sound is certain.
-    found.push({ sev: row.kind === "dropout" ? "bad" : "warn", badge: "Sound", word: true, frame: row.at, title: name + title,
+    found.push({ sev: row.kind === "dropout" ? "bad" : "warn", badge: "音频", word: true, frame: row.at, title: name + title,
       detail: row.notes.join(", "), act: jumpTo(item, row.at) });
   }
   for (const cut of touchingCuts()) {
     const row = cutScores.get(cut.key);
     if (!row || row.score === null || row.score >= CUT_FINE) continue;
     found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: cut.after.start,
-      title: (row.kind === "jump" ? "Jump cut, " : "Cut, ") + clipOf(cut.before.clip).name + " to " + clipOf(cut.after.clip).name,
+      title: (row.kind === "jump" ? "跳切，" : "切换，") + clipOf(cut.before.clip).name + "至 " + clipOf(cut.after.clip).name,
       detail: row.notes.join(", ") || row.kind, act: () => { jumpTo(cut.before, cut.after.start - 1)(); } });
   }
   for (const row of cutExtras.effects) {
@@ -4842,7 +4855,7 @@ function findings() {
     if (!effect || activeTake(effect)?.id !== row.take || row.score === null || row.score >= CUT_FINE) continue;
     const at = row.edge === "start" ? effect.start : effect.start + effect.frames;
     found.push({ sev: row.score < CUT_BAD ? "bad" : "warn", badge: String(row.score), frame: at,
-      title: (row.edge === "start" ? "Cut into " : "Cut out of ") + effect.name, detail: row.notes.join(", ") || row.kind,
+      title: (row.edge === "start" ? "切入 " : "切出 ") + effect.name, detail: row.notes.join(", ") || row.kind,
       act: () => selectEffect(effect.id) });
   }
   for (const row of cutExtras.inside) {
@@ -4850,13 +4863,13 @@ function findings() {
     if (!item || activeTake(clipOf(item.clip))?.id !== row.take || row.frame < item.in || row.frame >= item.out) continue;
     const at = item.start + Math.round((row.frame - item.in) / speedOf(item));
     const name = clipOf(item.clip).name;
-    const still = { frozen: "Frozen", still: "Still" }[row.kind];
-    const long = row.length ? (row.length / FPS).toFixed(row.length < FPS ? 2 : 1) + " s" : "";
+    const still = { frozen: "定格", still: "静止" }[row.kind];
+    const long = row.length ? (row.length / FPS).toFixed(row.length < FPS ? 2 : 1) + " 秒" : "";
     found.push({ sev: row.kind === "still" ? "warn" : "bad", badge: still || String(row.score), word: Boolean(still), frame: at,
-      title: still ? name + (row.kind === "frozen" ? " stops on one frame" : " barely moves")
-        : name + (row.kind === "fade" ? " fades inside its take" : " cuts inside its take"),
-      detail: row.kind === "frozen" ? "Held for " + long + ", " + row.length + " frames. Trim before it or render another seed"
-        : row.kind === "still" ? "For " + long + ". Fine if the shot should be still"
+      title: still ? name + (row.kind === "frozen" ? "停在同一帧" : "几乎没有运动")
+        : name + (row.kind === "fade" ? "在素材内部渐隐" : "在素材内部切换画面"),
+      detail: row.kind === "frozen" ? "持续 " + long + ", " + row.length + " 帧。可提前裁剪结束，或更换种子重新渲染"
+        : row.kind === "still" ? "持续 " + long + "。如果本来就需要静止，则无需调整"
         : row.notes.join(", "), act: jumpTo(item, at) });
   }
   for (const row of shownTakes()) {
@@ -4864,13 +4877,13 @@ function findings() {
     if (!fine) continue;
     const name = clipOf(row.item.clip).name;
     if (fine.drift && fine.drift.drifted) {
-      found.push({ sev: "bad", badge: "Drift", word: true, frame: row.item.start, title: name + " has drifted",
-        detail: Math.round(Math.abs(fine.drift.change) * 100) + "% " + (fine.drift.change > 0 ? "harsher" : "softer") + " than where its shot began",
+      found.push({ sev: "bad", badge: "画面漂移", word: true, frame: row.item.start, title: name + "发生画面漂移",
+        detail: Math.round(Math.abs(fine.drift.change) * 100) + "% " + (fine.drift.change > 0 ? "harsher" : "softer") + "，相较于镜头起始画面",
         act: jumpTo(row.item, row.item.start) });
     }
     if (fine.soft) {
-      found.push({ sev: "warn", badge: "Soft", word: true, frame: row.item.start, title: name + " is soft",
-        detail: Math.round(fine.part * 100) + "% of the cut's detail" + (row.take.quality === "draft" ? ", a draft among finals" : ""),
+      found.push({ sev: "warn", badge: "偏模糊", word: true, frame: row.item.start, title: name + "偏模糊",
+        detail: Math.round(fine.part * 100) + "%，相对于整个剪辑的精细度" + (row.take.quality === "draft" ? "，这是混在成片中的草稿" : ""),
         act: jumpTo(row.item, row.item.start) });
     }
   }
@@ -4878,8 +4891,8 @@ function findings() {
     const mean = ratingMean(rating);
     if (mean === null || mean >= RATING_LOOK) continue;
     const low = (rating.rows || []).filter((r) => !r.error).sort((a, b) => a.part - b.part)[0];
-    found.push({ sev: "warn", badge: mean + "%", frame: rating.from, title: "Rated " + timecode(rating.from) + " to " + timecode(rating.to),
-      detail: (low ? "Lowest: " + low.title + ", " + Math.round(low.part * 100) + "%. " : "") + "Rated " + String(rating.at || "").replace("T", " ").slice(0, 16),
+    found.push({ sev: "warn", badge: mean + "%", frame: rating.from, title: "评分 " + timecode(rating.from) + "至 " + timecode(rating.to),
+      detail: (low ? "最低项：" + low.title + ", " + Math.round(low.part * 100) + "%. " : "") + "评分 " + String(rating.at || "").replace("T", " ").slice(0, 16),
       act: () => { seek(rating.from); renderAll(); } });
   }
   for (const f of found) f.detail = f.detail.charAt(0).toUpperCase() + f.detail.slice(1);
@@ -4902,14 +4915,14 @@ function renderChecks() {
   chip.hidden = false;
   chip.className = "checks-chip" + (bad ? " bad" : warn ? " warn" : found.length || !checked() ? "" : " clear");
   const parts = [];
-  if (bad) parts.push(bad + " to fix");
-  if (warn) parts.push(warn + " to check");
-  chip.textContent = parts.length ? parts.join(", ") + (checked() ? "" : ", checking") : checked() ? "Checks clear" : "Checking";
-  chip.title = found.length ? "What the checks found in this cut" : "Cuts, their sound and movement, bridges, soft clips, drift and takes that stop moving are checked as clips render";
-  $("checksSummary").textContent = found.length ? found.length + " found" : "";
+  if (bad) parts.push(bad + " 项待修复");
+  if (warn) parts.push(warn + " 项待检查");
+  chip.textContent = parts.length ? parts.join(", ") + (checked() ? "" : "，检查中") : checked() ? "检查通过" : "正在检查";
+  chip.title = found.length ? "此剪辑的检查结果" : "渲染后检查剪辑点、声音、运动、桥接、模糊、漂移及定格问题";
+  $("checksSummary").textContent = found.length ? found.length + " 项结果" : "";
   if (!$("checksPanel").matches(":popover-open")) return;
   $("checksList").replaceChildren(...(found.length ? found.map(checkRow) : [Object.assign(document.createElement("p"), {
-    className: "checks-empty", textContent: checked() ? "Nothing to look at. Every rendered cut scores well and no take stops, drifts or goes soft." : "The cut is still being measured." })]));
+    className: "checks-empty", textContent: checked() ? "暂无待处理问题。已渲染片段的衔接良好，未发现定格、漂移或明显模糊。" : "仍在分析此剪辑。" })]));
 }
 
 function checkRow(f) {
@@ -4949,10 +4962,10 @@ function stillMarks(item, row, at) {
   const mark = document.createElement("button");
   mark.className = "soft-mark still-mark" + (frozen ? " frozen" : "");
   mark.style.left = px(at + shown / 2) + "px";
-  mark.textContent = frozen ? "Frozen" : "Still";
+  mark.textContent = frozen ? "定格" : "静止";
   mark.title = clipOf(item.clip).name + (frozen
-    ? ": the picture stops for " + seconds + " s, the same frame held. Trim the clip to end before it, or render it again with another seed."
-    : ": almost nothing moves for " + seconds + " s. If it should move, render it again with another seed, or trim it shorter.");
+    ? "：画面在同一帧停留 " + seconds + " 秒。可在此之前裁剪结束，或更换种子重新渲染。"
+    : "：画面几乎静止，持续 " + seconds + " 秒。如需要运动，请更换种子重新渲染，或缩短片段。");
   mark.setAttribute("aria-label", mark.title);
   mark.addEventListener("pointerdown", (event) => event.stopPropagation());
   mark.addEventListener("click", () => {
@@ -5118,7 +5131,7 @@ function addEffect() {
   effects.push(effect);
   save();
   selectEffect(effect.id);
-  toast("Added a VFX clip. It draws a title over the picture below: edit its code in the panel.");
+  toast("已添加 VFX 片段。它会在底层画面上绘制标题，可在面板中编辑代码。");
 }
 
 function removeEffect(id) {
@@ -5129,7 +5142,7 @@ function removeEffect(id) {
   state.effect = null;
   save();
   renderAll();
-  toast("Removed " + effect.name + " from the VFX lane.", false, undoAction);
+  toast("已移除 " + effect.name + "的 VFX 轨道引用。", false, undoAction);
 }
 
 function renderEffects() {
@@ -5143,8 +5156,8 @@ function renderEffects() {
     block.style.width = Math.max(12, px(effect.frames)) + "px";
     block.tabIndex = 0;
     block.setAttribute("role", "button");
-    const what = { todo: "not rendered", stale: "out of date", bad: "has an error", busy: "rendering", "": "rendered" }[status];
-    block.setAttribute("aria-label", effect.name + ", VFX clip, " + what + ", at " + timecode(effect.start));
+    const what = { todo: "尚未渲染", stale: "需要重新渲染", bad: "存在错误", busy: "rendering", "": "rendered" }[status];
+    block.setAttribute("aria-label", effect.name + "，VFX 片段，" + what + "，起点 " + timecode(effect.start));
     block.title = effect.name + ": " + what;
     const name = document.createElement("div");
     name.className = "name";
@@ -5227,7 +5240,7 @@ function showEffectProgress() {
   const percent = Math.floor(part * 100);
   const spent = (performance.now() - job.began) / 1000;
   const left = job.done > 24 ? (spent / job.done) * (job.total - job.done) : null;
-  const time = left === null ? "" : left >= 90 ? ", about " + Math.round(left / 60) + " min left" : ", about " + Math.max(1, Math.round(left)) + " s left";
+  const time = left === null ? "" : left >= 90 ? "，预计剩余 " + Math.round(left / 60) + " 分钟" : "，预计剩余 " + Math.max(1, Math.round(left)) + " 秒";
   const block = document.querySelector('.fx[data-effect="' + job.id + '"]');
   if (block) {
     const bar = block.querySelector(".fx-bar");
@@ -5237,10 +5250,10 @@ function showEffectProgress() {
     }
     const note = block.querySelector(".fx-note");
     if (note) note.textContent = percent + "%" + time;
-    block.title = job.name + ": rendering, frame " + job.done + " of " + job.total + time;
+    block.title = job.name + "：正在渲染，第 " + job.done + " / " + job.total + time;
   }
   const label = document.querySelector("#inspBody .row button.primary");
-  if (label && state.effect === job.id) label.textContent = "Rendering " + job.done + " of " + job.total + time;
+  if (label && state.effect === job.id) label.textContent = "正在渲染 " + job.done + " / " + job.total + time;
   document.title = percent + "% " + job.name + " · " + job.title;
 }
 
@@ -5259,7 +5272,7 @@ async function effectInputs(effect) {
     const url = viewUrl(asset.file, asset.subfolder);
     if (!inputBlobs.has(url)) {
       inputBlobs.set(url, fetch(url).then((reply) => {
-        if (!reply.ok) throw new Error("The input " + name + " (" + asset.file + ") could not be read.");
+        if (!reply.ok) throw new Error("输入 " + name + " (" + asset.file + "）无法读取。");
         return reply.blob();
       }));
     }
@@ -5322,7 +5335,7 @@ function showEffectError() {
   if (!box) return;
   const error = fx.error && fx.error.id === state.effect ? fx.error : null;
   box.hidden = !error;
-  box.textContent = error ? (error.line ? "Line " + error.line + ": " : "") + error.message : "";
+  box.textContent = error ? (error.line ? "行 " + error.line + ": " : "") + error.message : "";
 }
 
 // Draws the VFX clip under the playhead into the viewer, live, from its code. Calls made while one frame is being
@@ -5454,7 +5467,7 @@ function renderEffectControls() {
   if (!rows.length) {
     const none = document.createElement("p");
     none.className = "hint";
-    none.textContent = "The code declares no controls. Export a meta object with controls to get sliders here.";
+    none.textContent = "代码未声明可调控件。导出带 controls 的 meta 对象后，此处会显示对应滑块。";
     rows.push(none);
   }
   box.replaceChildren(...rows);
@@ -5466,15 +5479,15 @@ function renderEffect(panel, effect) {
   state_.className = "fx-state";
   state_.id = "fxState";
   const seconds = (effect.frames / FPS).toFixed(2).replace(/\.?0+$/, "");
-  state_.textContent = "On the VFX lane at " + timecode(effect.start) + ", " + seconds + " s. "
-    + ({ todo: "Not rendered: the export leaves it out until it is.", stale: "Out of date: it or the picture below changed since its render.",
-      bad: "Its code has an error.", busy: "Rendering.", "": "Rendered." }[status]);
+  state_.textContent = "位于 VFX 轨道，起点 " + timecode(effect.start) + "，" + seconds + " 秒。"
+    + ({ todo: "尚未渲染：导出时会忽略此片段。", stale: "需要重绘：该片段或底层画面在上次渲染后发生了变化。",
+      bad: "代码存在错误。", busy: "正在渲染。", "": "渲染完成。" }[status]);
 
   const code = document.createElement("textarea");
   code.className = "code";
   code.spellcheck = false;
   code.value = effect.source;
-  code.setAttribute("aria-label", "The code that draws this clip");
+  code.setAttribute("aria-label", "绘制此片段的代码");
   code.addEventListener("focus", () => checkpoint(), { once: true });
   let wait = null;
   code.addEventListener("input", () => {
@@ -5503,23 +5516,23 @@ function renderEffect(panel, effect) {
   actions.className = "row";
   const go = document.createElement("button");
   go.className = "primary";
-  go.textContent = fx.rendering?.id === effect.id ? "Rendering " + fx.rendering.done + " of " + fx.rendering.total : "Render";
+  go.textContent = fx.rendering?.id === effect.id ? "正在渲染 " + fx.rendering.done + " / " + fx.rendering.total : "渲染";
   go.disabled = Boolean(fx.rendering);
-  go.title = "Draw every frame over the picture below and keep the result as this clip's take";
+  go.title = "逐帧绘制底层画面上的内容，并保存为此片段的新版本";
   go.addEventListener("click", () => renderEffectTake(effect.id));
   const drop = document.createElement("button");
   drop.className = "quiet";
-  drop.textContent = "Remove";
+  drop.textContent = "移除";
   drop.addEventListener("click", () => removeEffect(effect.id));
   actions.append(go, drop);
 
   panel.replaceChildren(
-    section("VFX clip", [field("Name", effect.name, (v) => { effect.name = v || "VFX"; renderEffects(); }), state_]),
-    section("Controls", [controls]),
-    ...(Object.keys(effect.inputs || {}).length ? [section("Pictures it can draw", [Object.assign(document.createElement("p"), {
+    section("VFX 片段", [field("名称", effect.name, (v) => { effect.name = v || "VFX"; renderEffects(); }), state_]),
+    section("可调参数", [controls]),
+    ...(Object.keys(effect.inputs || {}).length ? [section("可绘制的图片", [Object.assign(document.createElement("p"), {
       className: "hint", textContent: Object.entries(effect.inputs).map(([name, asset]) => "env.inputs." + name + ": " + asset.file).join("\n"),
       style: "white-space: pre-wrap" })])] : []),
-    section("Code", [code, error]),
+    section("代码", [code, error]),
     actions,
   );
   renderEffectControls();
@@ -5541,7 +5554,7 @@ async function exactBelow(frame, w, h, work) {
     fxSource.src = url;
     await new Promise((resolve, reject) => {
       fxSource.addEventListener("loadeddata", resolve, { once: true });
-      fxSource.addEventListener("error", () => reject(new Error("could not read the clip below")), { once: true });
+      fxSource.addEventListener("error", () => reject(new Error("无法读取底层片段")), { once: true });
     });
   }
   const seconds = sourceSeconds(item, frame) + 0.5 / FPS;      // the middle of the frame, clear of rounding
@@ -5569,7 +5582,7 @@ async function renderEffectTake(id, claimed = null) {
   const path = "/project/" + encodeURIComponent(folder) + "/effect/" + encodeURIComponent(id);
   try {
     for (let tries = 0; unsaved() && tries < 60; tries++) await new Promise((r) => setTimeout(r, 150));
-    if (unsaved()) throw new Error("The project is still saving. Try again in a moment.");
+    if (unsaved()) throw new Error("项目仍在保存，请稍后重试。");
     const [w, h] = renderSize();
     await runtime.load({ source: effect.source, width: w, height: h, fps: FPS, frames: effect.frames, params: effect.params || {},
       inputs: await effectInputs(effect), data: effect.data ?? null });
@@ -5579,8 +5592,8 @@ async function renderEffectTake(id, claimed = null) {
     let batch = [];
     const send = async () => {
       if (!batch.length) return;
-      const response = await fetch("/h3take/api" + path + "/frames?job=" + job, { method: "POST", body: new Blob(batch) });
-      if (!response.ok) throw new Error((await response.text()) || "The server refused the frames.");
+      const response = await fetch("/h3take/api" + path + "/frames?job=" + job, { method: "POST", headers: { "X-H3-Editor": "1" }, body: new Blob(batch) });
+      if (!response.ok) throw new Error((await response.text()) || "服务器拒绝接收这些帧。");
       batch = [];
     };
     for (let k = 0; k < effect.frames; k++) {
@@ -5598,13 +5611,13 @@ async function renderEffectTake(id, claimed = null) {
     await send();
     const result = await postJson(path + "/take", { job });
     if (folder === state.folder && !unsaved()) adopt(result.project);
-    toast(effect.name + " is rendered.");
+    toast(effect.name + "已完成渲染。");
   } catch (error) {
     fx.error = { id, message: error.message || String(error), line: error.line ?? null };
-    toast("The VFX render stopped: " + (error.message || error), true);
+    toast("VFX 渲染已停止：" + (error.message || error), true);
     if (claimed) {
       // An agent asked for this render: tell it why it failed, on the clip.
-      const text = (error.line ? "Line " + error.line + ": " : "") + (error.message || String(error));
+      const text = (error.line ? "行 " + error.line + ": " : "") + (error.message || String(error));
       postJson(path + "/take", { error: text }).then((result) => {
         if (folder === state.folder && !unsaved()) adopt(result.project);
       }).catch(() => {});
@@ -5694,10 +5707,10 @@ function showRange() {
 // What Rate will look at: the marked range, else the selected clip on the timeline, else the cut from its start.
 const RATE_MOST = 180 * FPS;
 function rateSpan() {
-  if (state.range) return { a: state.range.a, b: state.range.b, what: "the marked range" };
+  if (state.range) return { a: state.range.a, b: state.range.b, what: "标记范围" };
   const item = state.project.timeline.find((i) => i.id === state.item);
   if (item) return { a: item.start, b: itemEnd(item), what: clipOf(item.clip).name };
-  return { a: 0, b: Math.min(sceneEnd(), RATE_MOST), what: sceneEnd() > RATE_MOST ? "the first three minutes of the cut" : "the whole cut" };
+  return { a: 0, b: Math.min(sceneEnd(), RATE_MOST), what: sceneEnd() > RATE_MOST ? "剪辑的前 3 分钟" : "整个剪辑" };
 }
 
 const rater = { busy: false, key: null };
@@ -5706,21 +5719,21 @@ function raterKey() {
   const box = $("raterKey");
   const set = rater.key?.set;
   const note = document.createElement("span");
-  note.textContent = set ? "A Gemini API key is set" + (rater.key.source === "environment" ? " in ComfyUI's environment." : ", saved with this ComfyUI.")
-    : "Rating needs your Gemini API key. It is saved with this ComfyUI, never in a project.";
+  note.textContent = set ? "已配置 Gemini API 密钥" + (rater.key.source === "environment" ? "，来源为 ComfyUI 环境变量。" : "，保存在此 ComfyUI 中。")
+    : "评分需要 Gemini API 密钥。密钥保存在此 ComfyUI 中，不会写入项目。";
   const input = document.createElement("input");
   input.type = "password";
   input.autocomplete = "off";
-  input.placeholder = set ? "Paste another key to replace it" : "Paste your Gemini API key";
-  input.setAttribute("aria-label", "Gemini API key");
+  input.placeholder = set ? "粘贴新密钥以替换" : "粘贴 Gemini API 密钥";
+  input.setAttribute("aria-label", "Gemini API 密钥");
   const keep = document.createElement("button");
   keep.className = "quiet";
-  keep.textContent = set ? "Replace" : "Save key";
+  keep.textContent = set ? "替换" : "保存密钥";
   keep.addEventListener("click", async () => {
     if (!input.value.trim()) return;
     try {
       rater.key = (await postJson("/settings", { gemini_key: input.value.trim() }, "PUT")).gemini;
-      $("raterResult").textContent = "The key is saved.";
+      $("raterResult").textContent = "密钥已保存。";
     } catch (error) {
       $("raterResult").textContent = error.message;
     }
@@ -5752,10 +5765,10 @@ function raterRows(rating) {
       fill.className = row.part < 0.45 ? "low" : row.part < 0.7 ? "mid" : "";
       meter.append(fill);
       meter.setAttribute("role", "img");
-      meter.setAttribute("aria-label", row.title + ": " + (row.of === 1 ? Math.round(row.part * 100) + "% likely" : row.score.toFixed(1) + " of " + row.of));
+      meter.setAttribute("aria-label", row.title + ": " + (row.of === 1 ? Math.round(row.part * 100) + "% 概率" : row.score.toFixed(1) + " / " + row.of));
       // A check has two ends, so it reads as how likely the good one is. A scale reads as a level.
       num.textContent = row.of === 1 ? Math.round(row.part * 100) + "%" : row.score.toFixed(1) + " / " + row.of;
-      level.textContent = row.level + (row.of === 1 || row.confidence === null || row.confidence === undefined ? "" : " · " + Math.round(row.confidence * 100) + "% sure");
+      level.textContent = row.level + (row.of === 1 || row.confidence === null || row.confidence === undefined ? "" : " · " + Math.round(row.confidence * 100) + "% 置信度");
     }
     box.append(what, meter, num, level);
     return box;
@@ -5772,7 +5785,7 @@ function raterPast(span) {
   // Earlier ratings that looked at some of the same frames: how this stretch scored before.
   const past = (state.project.ratings || []).filter((r) => r.from < span.b && span.a < r.to).slice(0, 6);
   $("raterPast").textContent = past.length
-    ? "Earlier ratings here:\n" + past.map((r) => r.at.replace("T", " ") + "  " + timecode(r.from) + " to " + timecode(r.to) + "  " + (ratingMean(r) ?? "–") + "%").join("\n")
+    ? "此处的历史评分：\n" + past.map((r) => r.at.replace("T", " ") + "  " + timecode(r.from) + "至 " + timecode(r.to) + "  " + (ratingMean(r) ?? "–") + "%").join("\n")
     : "";
   return past;
 }
@@ -5781,8 +5794,8 @@ async function openRater() {
   await flush();
   const span = rateSpan();
   const seconds = (span.b - span.a) / FPS;
-  $("raterSummary").textContent = "Rate " + span.what + ": " + timecode(span.a) + " to " + timecode(span.b) + ", " + seconds.toFixed(1) + " s."
-    + (span.b - span.a > RATE_MOST ? " That is more than three minutes: mark a shorter range." : "");
+  $("raterSummary").textContent = "评分范围：" + span.what + "：" + timecode(span.a) + " 至 " + timecode(span.b) + "，" + seconds.toFixed(1) + " 秒。"
+    + (span.b - span.a > RATE_MOST ? "范围超过 3 分钟，请缩短后重试。" : "");
   $("raterResult").textContent = "";
   const past = raterPast(span);
   const same = past.find((r) => r.from === span.a && r.to === span.b);
@@ -5792,27 +5805,27 @@ async function openRater() {
     rater.key = (await api("/settings")).gemini;
   } catch (_) {
     rater.key = { set: false };
-    $("raterResult").textContent = "This ComfyUI is running an older H3 Editor: restart it to use ratings.";
+    $("raterResult").textContent = "此 ComfyUI 仍在运行旧版 H3 编辑器，请重启后使用评分功能。";
   }
   raterKey();
   $("raterGo").onclick = async () => {
     rater.busy = true;
     $("raterGo").disabled = true;
-    $("raterGo").textContent = "Rating";
-    $("raterResult").textContent = "Exporting the range and sending it. A minute of video takes about half a minute.";
+    $("raterGo").textContent = "正在评分";
+    $("raterResult").textContent = "正在导出并发送选中范围。处理 1 分钟视频大约需要半分钟。";
     const folder = state.folder;
     try {
       const reply = await postJson("/project/" + encodeURIComponent(folder) + "/rate", { from: span.a, to: span.b });
       if (folder === state.folder && !unsaved()) adopt(reply.project);
       raterRows(reply.rating);
       const mean = ratingMean(reply.rating);
-      $("raterResult").textContent = (mean === null ? "" : "Overall " + mean + "%. ") + (reply.rating.tokens ? reply.rating.tokens.toLocaleString() + " tokens." : "");
+      $("raterResult").textContent = (mean === null ? "" : "综合评分 " + mean + "%. ") + (reply.rating.tokens ? reply.rating.tokens.toLocaleString() + " 个 token。" : "");
       raterPast(span);
     } catch (error) {
       $("raterResult").textContent = error.message;
     }
     rater.busy = false;
-    $("raterGo").textContent = "Rate";
+    $("raterGo").textContent = "评分";
     $("raterGo").disabled = !rater.key?.set;
   };
 }
@@ -5841,7 +5854,7 @@ async function shrinkPicture(source) {
   const url = await new Promise((done, fail) => {
     const reader = new FileReader();
     reader.onload = () => done(reader.result);
-    reader.onerror = () => fail(new Error("Could not read a picture for the writing model."));
+    reader.onerror = () => fail(new Error("无法读取提供给写作模型的图片。"));
     reader.readAsDataURL(out);
   });
   const made = { blob: out, url };
@@ -5853,13 +5866,13 @@ const writerCast = () => (state.project.cast || []).filter((person) => person.fi
 
 async function writerPictures() {
   const rows = [];
-  for (const person of writerCast()) rows.push({ label: "@" + person.name + ", a cast member: how they look", ...(await shrinkPicture(assetUrl(person))) });
-  for (const added of writing.added) rows.push({ label: "A picture the user added" + (added.name ? ": " + added.name : ""), ...(await shrinkPicture(added.blob)) });
+  for (const person of writerCast()) rows.push({ label: "@" + person.name + "，角色外貌参考图", ...(await shrinkPicture(assetUrl(person))) });
+  for (const added of writing.added) rows.push({ label: "用户添加的图片" + (added.name ? ": " + added.name : ""), ...(await shrinkPicture(added.blob)) });
   return rows;
 }
 
 function addWriterPicture(blob, name) {
-  if (writing.added.length >= WRITER_ADDED_MOST) return toast("Up to " + WRITER_ADDED_MOST + " added pictures. Remove one first.", true);
+  if (writing.added.length >= WRITER_ADDED_MOST) return toast("最多 " + WRITER_ADDED_MOST + " 张附加图片，请先移除一张。", true);
   writing.added.push({ blob, name: name || "", thumb: URL.createObjectURL(blob) });
   writing.draw?.();
 }
@@ -5867,7 +5880,7 @@ function addWriterPicture(blob, name) {
 // The frame the viewer shows right now, as a picture.
 async function viewerPicture() {
   const video = [...document.querySelectorAll("#screen video.show")].pop();
-  if (!video || video.readyState < 2 || !video.videoWidth) throw new Error("The viewer shows no frame. Move the playhead over a rendered clip.");
+  if (!video || video.readyState < 2 || !video.videoWidth) throw new Error("预览器没有画面。请将播放头移到已渲染片段上。");
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -5880,7 +5893,7 @@ function picturesStrip() {
   box.className = "writer-pictures";
   const head = document.createElement("span");
   head.className = "writer-pictures-head";
-  head.textContent = "Pictures it sees";
+  head.textContent = "模型可见的图片";
   const thumbs = document.createElement("div");
   thumbs.className = "writer-thumbs";
   const hint = document.createElement("p");
@@ -5899,7 +5912,7 @@ function picturesStrip() {
       const drop = document.createElement("button");
       drop.type = "button";
       drop.className = "writer-thumb-remove";
-      drop.setAttribute("aria-label", "Remove this picture");
+      drop.setAttribute("aria-label", "移除此图片");
       drop.textContent = "\u00d7";
       drop.addEventListener("click", remove);
       figure.append(drop);
@@ -5918,31 +5931,31 @@ function picturesStrip() {
   writing.draw = () => {
     const cast = writerCast();
     thumbs.replaceChildren(
-      ...cast.map((person) => tile(assetUrl(person), "@" + person.name, "Always sent: how @" + person.name + " looks")),
-      ...writing.added.map((added, index) => tile(added.thumb, added.name || "Added", "Sent with this request", () => {
+      ...cast.map((person) => tile(assetUrl(person), "@" + person.name, "始终发送：@" + person.name + "的外貌")),
+      ...writing.added.map((added, index) => tile(added.thumb, added.name || "已添加", "随此次请求发送", () => {
         URL.revokeObjectURL(added.thumb);
         writing.added.splice(index, 1);
         writing.draw();
       })),
       ...(writing.added.length < WRITER_ADDED_MOST ? [
-        adder("Add picture", "Upload a picture for the model to look at", async () => {
+        adder("添加图片", "上传供模型参考的图片", async () => {
           const file = await pickFile($("frameFile"));
           if (file) addWriterPicture(file, file.name);
         }),
-        adder("Playhead frame", "Add the frame the viewer shows", async () => {
+        adder("播放头当前帧", "添加预览器当前帧", async () => {
           try {
-            addWriterPicture(await viewerPicture(), "Frame at " + timecode(state.playhead));
+            addWriterPicture(await viewerPicture(), "当前帧位置：" + timecode(state.playhead));
           } catch (error) {
             toast(error.message, true);
           }
         }),
       ] : []),
     );
-    hint.textContent = (cast.length ? "The cast's pictures always go with it. " : "")
-      + "Drop, paste or add a picture of a place, a product or a frame, and the model writes from what it shows.";
+    hint.textContent = (cast.length ? "角色参考图始终随请求发送。" : "")
+      + "可拖入、粘贴或添加场景、产品或视频帧，模型会参考图片写作。";
   };
   writing.draw();
-  dropTarget(box, (file) => addWriterPicture(file, file.name), "a picture for the model");
+  dropTarget(box, (file) => addWriterPicture(file, file.name), "供模型参考的图片");
   box.append(head, thumbs, hint);
   return box;
 }
@@ -5951,7 +5964,7 @@ $("writer").addEventListener("paste", (event) => {
   const file = [...(event.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
   if (!file || !writing.draw) return;
   event.preventDefault();
-  addWriterPicture(file, "Pasted picture");
+  addWriterPicture(file, "粘贴的图片");
 });
 
 // A labelled input for a dialog. Unlike field(), it changes nothing in the project.
@@ -5987,7 +6000,7 @@ function comboBox(field, names, pick) {
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "combo-toggle";
-  toggle.setAttribute("aria-label", "Show the listed models");
+  toggle.setAttribute("aria-label", "显示模型列表");
   toggle.tabIndex = -1;
   toggle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg>';
   const list = document.createElement("div");
@@ -6023,7 +6036,7 @@ function comboBox(field, names, pick) {
       return row;
     });
     list.replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement("p"), { className: "combo-empty",
-      textContent: names().length ? "No listed model has that in its name. Keep typing to use your own." : "Nothing listed yet. Press List models, or type a name." })]));
+      textContent: names().length ? "没有匹配的模型名称，可继续输入自定义名称。" : "列表为空。请点击“列出模型”，或手动输入名称。" })]));
   };
   const place = () => {
     const at = input.getBoundingClientRect();
@@ -6088,7 +6101,7 @@ function openWriterSetup(then = null) {
     const type = document.createElement("label");
     type.className = "choice";
     const typeTitle = document.createElement("span");
-    typeTitle.textContent = "Provider";
+    typeTitle.textContent = "服务商";
     const types = document.createElement("select");
     for (const row of writer.PROVIDERS) {
       const option = document.createElement("option");
@@ -6112,21 +6125,21 @@ function openWriterSetup(then = null) {
     hint.className = "hint";
     hint.textContent = kind.hint;
     if (kind.local && !draft.model) draft.model = writer.COMFY_MODEL;
-    const address = plainField("Address", draft.url, { placeholder: kind.address || "Google's own address" });
+    const address = plainField("接口地址", draft.url, { placeholder: kind.address || "Google 官方地址" });
     address.input.addEventListener("input", () => (draft.url = address.input.value));
-    const model = plainField("Model", draft.model, { placeholder: kind.local ? "A file in models/text_encoders" : "The model's name, as the endpoint lists it" });
+    const model = plainField("模型", draft.model, { placeholder: kind.local ? "models/text_encoders 中的文件" : "接口列出的模型名称" });
     const picker = comboBox(model, () => writerModels, (name) => (draft.model = name));
     model.input.addEventListener("input", () => (draft.model = model.input.value));
     const list = document.createElement("button");
     list.className = "quiet";
-    list.textContent = "List models";
+    list.textContent = "列出模型";
     list.addEventListener("click", async () => {
-      note(kind.local ? "Asking ComfyUI for its text models." : "Asking the endpoint for its models.");
+      note(kind.local ? "正在读取 ComfyUI 文本模型列表。" : "正在读取接口模型列表。");
       list.disabled = true;
       try {
         writerModels = await writer.listModels(draft);
-        note(writerModels.length ? writerModels.length + (writerModels.length === 1 ? " model" : " models") + ". Pick one, or type another name."
-          : "The endpoint lists no models. Type the model's name.");
+        note(writerModels.length ? writerModels.length + (writerModels.length === 1 ? " 个模型" : " 个模型") + "。请选择一个，或输入其他名称。"
+          : "接口未返回模型，请手动输入模型名称。");
         if (writerModels.length) picker.open(true);
       } catch (error) {
         note(error.message, true);
@@ -6136,7 +6149,7 @@ function openWriterSetup(then = null) {
     const modelRow = document.createElement("div");
     modelRow.className = "writer-model";
     modelRow.append(model.wrap, list);
-    const key = plainField(kind.key ? "API key" : "API key, if the endpoint asks for one", draft.key, { type: "password", placeholder: "Paste your key" });
+    const key = plainField(kind.key ? "API 密钥" : "API 密钥（接口需要时填写）", draft.key, { type: "password", placeholder: "粘贴密钥" });
     key.input.addEventListener("input", () => (draft.key = key.input.value));
     // A model run by this ComfyUI has no address and needs no key.
     $("writerSetupFields").replaceChildren(...(kind.local ? [type, hint, modelRow] : [type, hint, address.wrap, modelRow, key.wrap]));
@@ -6144,18 +6157,18 @@ function openWriterSetup(then = null) {
   draw();
   note("");
   $("writerSetupTest").onclick = async () => {
-    if (!writer.ready(draft)) return note("Name a model first" + (writer.provider(draft.type).key ? ", and paste a key." : "."), true);
+    if (!writer.ready(draft)) return note("请先填写模型名称" + (writer.provider(draft.type).key ? "，并填写密钥。" : "."), true);
     $("writerSetupTest").disabled = true;
-    note("Asking the model.");
+    note("正在请求模型。");
     try {
-      note("It answered: " + (await writer.test(draft)));
+      note("模型回复：" + (await writer.test(draft)));
     } catch (error) {
       note(error.message, true);
     }
     $("writerSetupTest").disabled = false;
   };
   $("writerSetupSave").onclick = () => {
-    if (!writer.saveSettings(draft)) return note("This browser would not keep the settings.", true);
+    if (!writer.saveSettings(draft)) return note("浏览器无法保存这些设置。", true);
     $("writerSetup").close();
     renderInspector();
     if (then && writer.ready()) then();
@@ -6172,7 +6185,7 @@ function shotCard(shot, title = null) {
     head.textContent = title;
     if (shot.seconds) {
       const length = document.createElement("span");
-      length.textContent = shot.seconds + " s";
+      length.textContent = shot.seconds + " 秒";
       head.append(length);
     }
     card.append(head);
@@ -6201,11 +6214,11 @@ function openWriter(job) {
   const using = document.createElement("div");
   using.className = "writer-using";
   const named = document.createElement("span");
-  named.textContent = "Uses " + given.model + (writer.provider(given.type).local ? ", run by this ComfyUI." : " on " + writer.provider(given.type).title + ".");
+  named.textContent = "使用 " + given.model + (writer.provider(given.type).local ? "，由本机 ComfyUI 运行。" : "，服务地址 " + writer.provider(given.type).title + ".");
   const change = document.createElement("button");
   change.className = "quiet small";
-  change.textContent = "Change";
-  change.title = "Choose another model or provider";
+  change.textContent = "更改";
+  change.title = "选择其他模型或服务商";
   change.addEventListener("click", () => {
     if (writing.busy) return;
     $("writer").close();
@@ -6225,21 +6238,21 @@ function openWriter(job) {
     writing.busy = true;
     $("writerGo").disabled = true;
     $("writerUse").disabled = true;
-    writerNote("Writing. A local model can take a minute.");
+    writerNote("正在写作，本地模型可能需要一分钟。");
     const folder = state.folder;
     try {
       const pictures = await writerPictures();
-      if (pictures.length) writerNote("Writing, with " + pictures.length + (pictures.length === 1 ? " picture" : " pictures") + ". A local model can take a minute.");
+      if (pictures.length) writerNote("正在写作，已附加 " + pictures.length + (pictures.length === 1 ? " 张图片" : " 张图片") + "。本地模型可能需要一分钟。");
       const made = await job.run(pictures);
       if (folder !== state.folder || !$("writer").open) return;
       writing.made = made;
       $("writerPreview").replaceChildren(...job.show(made));
       $("writerUse").textContent = job.use(made);
       $("writerUse").disabled = false;
-      $("writerGo").textContent = "Write again";
+      $("writerGo").textContent = "重新写作";
       const seen = writer.lastSeen();
-      writerNote("Read it before you use it. Nothing has changed yet."
-        + (seen.blind ? " This model takes no pictures, so it wrote from the text alone." : seen.pictures ? " It was sent " + seen.pictures + (seen.pictures === 1 ? " picture" : " pictures") + "; a model that cannot see writes from the text." : ""));
+      writerNote("请先阅读确认，当前尚未修改项目。"
+        + (seen.blind ? "此模型不支持图片，仅依据文字写作。" : seen.pictures ? "已发送 " + seen.pictures + (seen.pictures === 1 ? " 张图片" : " 张图片") + "；不支持视觉的模型仍仅依据文字写作。" : ""));
     } catch (error) {
       writerNote(error.message, true);
     } finally {
@@ -6274,15 +6287,15 @@ function castIn(text) {
 
 function openRewrite(clip) {
   const empty = !String(clip.action || "").trim();
-  const directions = plainField(empty ? "What is this shot" : "What should change", "", {
+  const directions = plainField(empty ? "镜头内容" : "修改要求", "", {
     area: true,
-    placeholder: empty ? "A keeper climbs the lighthouse stairs at dusk, out of breath." : "Leave empty to tighten it as it is. Or: make it night, slow the camera, add a line.",
+    placeholder: empty ? "黄昏时分，守塔人气喘吁吁地爬上灯塔楼梯。" : "留空可直接润色。也可输入：改为夜晚、放慢运镜、添加一句台词。",
   });
   openWriter({
-    title: (empty ? "Write " : "Rewrite ") + clip.name,
+    title: (empty ? "编写 " : "重写 ") + clip.name,
     fields: [directions.wrap],
-    go: empty ? "Write" : "Rewrite",
-    use: () => "Use it",
+    go: empty ? "编写" : "重写",
+    use: () => "采用结果",
     run: (pictures) => writer.rewrite({ project: state.project, clip, ...neighbours(clip), directions: directions.input.value, pictures }),
     show: (made) => [shotCard(made)],
     apply: (made) => {
@@ -6294,19 +6307,19 @@ function openRewrite(clip) {
       if (placed.length) live.cast = [...(live.cast || []), ...placed];
       save();
       renderAll();
-      toast((empty ? "Wrote " : "Rewrote ") + live.name + ". Ctrl+Z brings the old text back.");
+      toast((empty ? "已编写 " : "已重写 ") + live.name + "。按 Ctrl+Z 可恢复原文。");
     },
   });
 }
 
 function openWriteShots() {
-  const brief = plainField("Describe the video", "", {
+  const brief = plainField("描述视频内容", "", {
     area: true,
-    placeholder: "Who is in it, where it happens, what happens, and what is said. For example: a 20 second teaser for a seaside cafe opening at dawn.",
+    placeholder: "说明人物、地点、事件与台词。例如：一家海边咖啡馆在黎明开业的 20 秒预告片。",
   });
   brief.input.classList.add("big");
-  const count = plainField("Shots", 4, { type: "number" });
-  const each = plainField("Seconds each", 5, { type: "number" });
+  const count = plainField("镜头数量", 4, { type: "number" });
+  const each = plainField("每镜头时长（秒）", 5, { type: "number" });
   for (const [input, [low, high]] of [[count.input, writer.LIMITS.shots], [each.input, writer.LIMITS.seconds]]) {
     input.min = low;
     input.max = high;
@@ -6315,12 +6328,12 @@ function openWriteShots() {
   numbers.className = "writer-numbers";
   numbers.append(count.wrap, each.wrap);
   openWriter({
-    title: "Write shots",
+    title: "编写分镜",
     fields: [brief.wrap, numbers],
-    go: "Write shots",
-    use: (made) => (made ? "Add " + made.length + (made.length === 1 ? " clip" : " clips") : "Add clips"),
+    go: "编写分镜",
+    use: (made) => (made ? "添加 " + made.length + (made.length === 1 ? " 个镜头" : " 个镜头") : "添加镜头"),
     run: async (pictures) => {
-      if (!brief.input.value.trim()) throw new Error("Describe the video first.");
+      if (!brief.input.value.trim()) throw new Error("请先描述视频内容。");
       return writer.writeShots({ project: state.project, brief: brief.input.value, count: count.input.value, seconds: each.input.value, pictures });
     },
     show: (made) => made.map((shot) => shotCard(shot, shot.name)),
@@ -6344,7 +6357,7 @@ function openWriteShots() {
       state.tab = "shot";
       save();
       renderAll();
-      toast("Added " + made.length + (made.length === 1 ? " clip" : " clips") + " at the end of the cut. Render all drafts to see them.");
+      toast("已添加 " + made.length + (made.length === 1 ? " 个镜头" : " 个镜头") + "至剪辑末尾。可点击“渲染全部草稿”预览。");
     },
   });
 }
@@ -6356,9 +6369,9 @@ function rewriteButton(clip) {
   button.className = "label-tool";
   button.dataset.key = "Rewrite";
   const words = document.createElement("span");
-  words.textContent = String(clip.action || "").trim() ? "Rewrite" : "Write";
+  words.textContent = String(clip.action || "").trim() ? "重写" : "编写";
   button.append(icon("sparkle"), words);
-  button.title = "A language model writes this shot's text, for you to read before it replaces anything";
+  button.title = "使用语言模型编写镜头文字，确认后再替换原文";
   button.addEventListener("click", (event) => {
     event.preventDefault();
     openRewrite(clip);
@@ -6372,22 +6385,22 @@ function writingSection() {
   const shots = document.createElement("button");
   shots.className = "quiet wide";
   shots.dataset.key = "Write shots";
-  shots.textContent = "Write shots";
-  shots.title = "Describe the video, and a language model writes its shots as new clips";
+  shots.textContent = "编写分镜";
+  shots.title = "描述视频内容，让语言模型生成新的分镜";
   shots.addEventListener("click", openWriteShots);
   const setup = document.createElement("button");
   setup.className = "quiet wide";
   setup.dataset.key = "Writing setup";
-  setup.textContent = set ? "Change the language model" : "Set up a language model";
+  setup.textContent = set ? "更改语言模型" : "设置语言模型";
   setup.addEventListener("click", () => openWriterSetup());
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = set ? "Writing uses " + given.model + (writer.provider(given.type).local ? ", run by this ComfyUI." : " on " + writer.provider(given.type).title + ", from this browser.")
-    : "A language model can write a video's shots, or rewrite one clip: a text model run by this ComfyUI, or any OpenAI-compatible endpoint, Anthropic, Gemini or Ollama.";
+  hint.textContent = set ? "写作使用 " + given.model + (writer.provider(given.type).local ? "，由本机 ComfyUI 运行。" : "，服务地址 " + writer.provider(given.type).title + "，由当前浏览器调用。")
+    : "可使用此 ComfyUI 运行的文本模型，或 OpenAI 兼容接口、Anthropic、Gemini、Ollama 编写分镜或重写镜头。";
   const pair = document.createElement("div");
   pair.className = "pair buttons";
   pair.append(shots, setup);
-  return section("Writing", [pair, hint], "pen");
+  return section("智能写作", [pair, hint], "pen");
 }
 
 $("panelDialogClose").addEventListener("click", () => $("panelDialog").close());
@@ -6410,7 +6423,7 @@ function updateClock() {
   frames.className = "frames-part";
   frames.textContent = now.slice(5);
   $("time").replaceChildren(now.slice(0, 5), frames);
-  $("total").textContent = "of " + timecode(viewEnd());
+  $("total").textContent = " / " + timecode(viewEnd());
   drawNotes();
 }
 
@@ -6500,7 +6513,7 @@ function bindBlock(block, item, clip) {
 function splitAtPlayhead() {
   const item = itemAt(state.playhead);
   if (!item || state.playhead <= item.start || state.playhead >= itemEnd(item)) {
-    toast("Move the playhead over a clip to split it.");
+    toast("请将播放头移到片段上，再执行分割。");
     return;
   }
   checkpoint();
@@ -6525,7 +6538,7 @@ function removeSelected() {
     return;
   }
   if (!state.item) {
-    toast("Select a clip or a gap on the timeline first.");
+    toast("请先选择时间线上的片段或空隙。");
     return;
   }
   checkpoint();
@@ -6551,33 +6564,33 @@ function itemActions(item) {
   const holdable = rendered && itemLength(item) >= HOLD;
   const inside = state.playhead > item.start && state.playhead < itemEnd(item);
   return [
-    act("Render draft", () => renderClip(clip, "draft"), { off: busy ? clip.name + " is rendering" : "" }),
-    act("Render final", () => renderClip(clip, "final"), { off: busy ? clip.name + " is rendering" : "" }),
+    act("渲染草稿", () => renderClip(clip, "draft"), { off: busy ? clip.name + "正在渲染" : "" }),
+    act("渲染成片", () => renderClip(clip, "final"), { off: busy ? clip.name + "正在渲染" : "" }),
     "-",
-    act(String(clip.action || "").trim() ? "Rewrite with a language model" : "Write with a language model", () => openRewrite(clip)),
+    act(String(clip.action || "").trim() ? "用语言模型重写" : "用语言模型编写", () => openRewrite(clip)),
     "-",
-    act("Extend forward", () => addLinked("extend_after"), { off: holdable ? "" : "Render it first; it needs " + HOLD + " frames to carry on from" }),
-    act("Extend back", () => addLinked("extend_before"), { off: holdable ? "" : "Render it first; it needs " + HOLD + " frames to carry on from" }),
-    act("Bridge to next", () => addLinked("bridge"), { off: bridgeable(item, next) ? "" : "Needs a rendered clip after it" }),
-    act("Bridge into its movement", () => addLinked("bridge", "hold"), { off: bridgeable(item, next, "hold") ? "" : "Needs a rendered clip after it, with " + HOLD + " frames on the timeline" }),
-    act("Merge with next", mergeWithNext, { off: next && activeTake(clipOf(next.clip)) && next.start === itemEnd(item) ? "" : "Needs a rendered clip right after it" }),
+    act("向后延伸", () => addLinked("extend_after"), { off: holdable ? "" : "请先渲染，至少需要 " + HOLD + " 帧才能接续" }),
+    act("向前延伸", () => addLinked("extend_before"), { off: holdable ? "" : "请先渲染，至少需要 " + HOLD + " 帧才能接续" }),
+    act("桥接下一片段", () => addLinked("bridge"), { off: bridgeable(item, next) ? "" : "需要后方有已渲染片段" }),
+    act("桥接下一段运动", () => addLinked("bridge", "hold"), { off: bridgeable(item, next, "hold") ? "" : "需要后方有已渲染片段，且至少有 " + HOLD + " 帧位于时间线上" }),
+    act("与下一片段融合", mergeWithNext, { off: next && activeTake(clipOf(next.clip)) && next.start === itemEnd(item) ? "" : "需要紧接着一个已渲染片段" }),
     "-",
-    act("Split at the playhead", splitAtPlayhead, { key: "S", off: inside ? "" : "Move the playhead over this clip" }),
-    act("Show its takes", () => { state.tab = "takes"; renderAll(); }, { off: clip.takes.length ? "" : "Not rendered yet" }),
+    act("在播放头处分割", splitAtPlayhead, { key: "S", off: inside ? "" : "请将播放头移到此片段上" }),
+    act("查看素材版本", () => { state.tab = "takes"; renderAll(); }, { off: clip.takes.length ? "" : "尚未渲染" }),
     "-",
-    act("Remove from the timeline", removeSelected, { key: "Delete" }),
-    act("Ripple delete", rippleDelete, { key: "Shift+Delete", danger: true }),
+    act("从时间线移除", removeSelected, { key: "删除" }),
+    act("波纹删除", rippleDelete, { key: "Shift+Delete", danger: true }),
   ];
 }
 
 function clipActions(clip) {
   const busy = Boolean(jobFor(clip.id));
   return [
-    act("Render draft", () => renderClip(clip, "draft"), { off: busy ? clip.name + " is rendering" : "" }),
-    act("Render final", () => renderClip(clip, "final"), { off: busy ? clip.name + " is rendering" : "" }),
+    act("渲染草稿", () => renderClip(clip, "draft"), { off: busy ? clip.name + "正在渲染" : "" }),
+    act("渲染成片", () => renderClip(clip, "final"), { off: busy ? clip.name + "正在渲染" : "" }),
     "-",
-    act(String(clip.action || "").trim() ? "Rewrite with a language model" : "Write with a language model", () => openRewrite(clip)),
-    act("Add to the end of the cut", () => {
+    act(String(clip.action || "").trim() ? "用语言模型重写" : "用语言模型编写", () => openRewrite(clip)),
+    act("添加到剪辑末尾", () => {
       checkpoint();
       placeOnTimeline(clip, sceneEnd());
       state.item = state.project.timeline.at(-1).id;
@@ -6585,20 +6598,20 @@ function clipActions(clip) {
       renderAll();
     }),
     "-",
-    act("Delete clip", () => deleteClip(clip), { danger: true }),
+    act("删除镜头", () => deleteClip(clip), { danger: true }),
   ];
 }
 
 function viewerActions() {
   const clip = clipOf(state.clip);
   const shown = viewing() ? activeTake(viewing()) : activeTake(clipOf(itemAt(state.playhead)?.clip));
-  const off = !clip ? "Select the clip to give it this frame" : !shown ? "The viewer shows no rendered frame" : "";
+  const off = !clip ? "选择要设置此帧的镜头" : !shown ? "预览器没有已渲染画面" : "";
   const rows = [];
-  for (const [side, label] of [["first", "First frame"], ["last", "Last frame"]]) {
-    rows.push(act("Use as the " + label.toLowerCase() + (clip ? " of " + clip.name : ""), () => grabFrame(clip, side),
-      { off: off || (frameUsable(clip, side) ? "" : clip.name + " carries on from another clip there") }));
+  for (const [side, label] of [["first", "首帧"], ["last", "尾帧"]]) {
+    rows.push(act("设为" + label.toLowerCase() + (clip ? " / " + clip.name : ""), () => grabFrame(clip, side),
+      { off: off || (frameUsable(clip, side) ? "" : clip.name + "在此处接续另一个片段") }));
   }
-  rows.push("-", act("Note on this frame", startNote, { key: "N", off: shown ? "" : "The viewer shows no rendered frame" }));
+  rows.push("-", act("标注当前帧", startNote, { key: "N", off: shown ? "" : "预览器没有已渲染画面" }));
   return rows;
 }
 
@@ -6623,25 +6636,25 @@ function actionsAt(target) {
     const effect = effectOf(effectBlock.dataset.effect);
     if (!effect) return null;
     selectEffect(effect.id);
-    return { title: effect.name, rows: [act("Render", () => renderEffectTake(effect.id), { off: fx.rendering ? "A VFX clip is rendering" : "" }), "-",
-      act("Remove from the VFX lane", () => removeEffect(effect.id), { key: "Delete" })] };
+    return { title: effect.name, rows: [act("渲染", () => renderEffectTake(effect.id), { off: fx.rendering ? "有 VFX 片段正在渲染" : "" }), "-",
+      act("从 VFX 轨道移除", () => removeEffect(effect.id), { key: "删除" })] };
   }
   const sound = target.closest("[data-sound]");
   if (sound) {
     const found = (state.project.sounds || []).find((s) => s.id === sound.dataset.sound);
     if (!found) return null;
     selectSound(found.id);
-    return { title: found.name || "Sound", rows: [act("Remove from the sound lane", () => removeSound(found.id), { key: "Delete" })] };
+    return { title: found.name || "音频", rows: [act("从音轨移除", () => removeSound(found.id), { key: "删除" })] };
   }
   const member = target.closest("#cast [data-person]");
   if (member) {
     const person = (state.project.cast || []).find((p) => p.id === member.dataset.person);
     if (!person) return null;
     member.click();
-    return { title: person.name, rows: [act("Use the voice of the clip under the playhead", () => grabVoice(person)), "-",
-      act("Remove from the cast", () => removePerson(person), { danger: true })] };
+    return { title: person.name, rows: [act("使用播放头下片段的声音", () => grabVoice(person)), "-",
+      act("从角色列表移除", () => removePerson(person), { danger: true })] };
   }
-  if (target.closest("#screen")) return { title: "Viewer", rows: viewerActions() };
+  if (target.closest("#screen")) return { title: "预览器", rows: viewerActions() };
   return null;
 }
 
@@ -6753,7 +6766,7 @@ function setLiveSound(on) {
   $("motion").muted = !on;
   const button = $("liveSound");
   button.setAttribute("aria-pressed", String(on));
-  button.dataset.tip = on ? "Mute the preview" : "Hear the preview";
+  button.dataset.tip = on ? "关闭预览声音" : "播放预览声音";
 }
 
 function showLive(job) {
@@ -6784,7 +6797,7 @@ function showLive(job) {
       });
     };
   }
-  live.textContent = (clipOf(job.clip)?.name || "Clip") + ": " + (job.stage || "Waiting in the queue") + (job.max ? ", step " + job.step + " of " + job.max : "");
+  live.textContent = (clipOf(job.clip)?.name || "镜头") + ": " + (job.stage || "等待队列") + (job.max ? "，第 " + job.step + " / " + job.max : "");
 }
 
 setLiveSound(liveSound);
@@ -6877,7 +6890,7 @@ function showSource(clip) {
     slate.textContent = "";
   } else {
     front.classList.remove("show");
-    slate.textContent = job ? "" : "This clip has not been rendered yet. Press Render draft.";
+    slate.textContent = job ? "" : "此镜头尚未渲染，请点击“渲染草稿”。";
   }
   showLive(job);
   updateClock();
@@ -6942,8 +6955,8 @@ function showPicture() {
   } else {
     front.classList.remove("show");
     back.classList.remove("show");
-    if (item) slate.textContent = jobFor(item.clip) ? "" : "This clip has not been rendered yet. Select it and press Render draft.";
-    else slate.textContent = state.project.clips.length ? "" : "Press New clip, describe the shot, and render a draft.";
+    if (item) slate.textContent = jobFor(item.clip) ? "" : "此镜头尚未渲染，请选中后点击“渲染草稿”。";
+    else slate.textContent = state.project.clips.length ? "" : "点击“新建镜头”，描述画面，再渲染草稿。";
   }
   showLive(job);
   placePlayhead();
@@ -6971,7 +6984,7 @@ function swap() {
 function setPlaying(on) {
   state.playing = on;
   $("play").classList.toggle("playing", on);
-  $("play").setAttribute("aria-label", on ? "Pause" : "Play");
+  $("play").setAttribute("aria-label", on ? "暂停" : "播放");
   if (!on) {
     front.pause();
     back.pause();
@@ -7120,13 +7133,13 @@ function updateQueue() {
   const waiting = count - (state.running ? 1 : 0);
   const parts = [];
   if (clip) parts.push(clip.name + ", " + Math.round((state.running.progress || 0) * 100) + "%");
-  else if (state.running) parts.push("Rendering");
-  if (waiting) parts.push(waiting + " waiting");
+  else if (state.running) parts.push("正在渲染");
+  if (waiting) parts.push(waiting + " 个排队中");
   let chip = box.firstElementChild;
   if (!chip) {
     chip = document.createElement("button");
     chip.className = "queue-chip";
-    chip.title = "Show the clip that is rendering";
+    chip.title = "查看正在渲染的镜头";
     chip.addEventListener("click", () => {
       const job = front();
       if (!job || !clipOf(job.clip)) return;
@@ -7143,7 +7156,7 @@ async function renderClip(clip, quality, detail, upscaler) {
   if (jobFor(clip.id)) return;
   if (!clip.action.trim()) {
     selectClip(clip.id);
-    toast("Describe what happens in " + clip.name + " before rendering it.", true);
+    toast("请先填写以下镜头的画面描述：" + clip.name + "，再进行渲染。", true);
     return;
   }
   try {
@@ -7170,7 +7183,7 @@ async function cancelJob(job) {
     if (!unsaved()) adopt(result.project);
     updateQueue();
     renderAll();
-    toast("Render cancelled.");
+    toast("渲染已取消。");
   } catch (error) {
     toast(error.message, true);
   }
@@ -7273,11 +7286,11 @@ function onMessage({ type, data }) {
     }
     showLive(job);
   } else if (type === "executed" && String(data.node) === "19") {
-    job.stage = "Adding the take";
+    job.stage = "正在添加素材版本";
     showFrame();
   } else if (type === "execution_error") {
     job.reported = true;
-    toast("The render of " + (clipOf(job.clip)?.name || "a clip") + " failed: " + (data.exception_message || "see the ComfyUI log"), true);
+    toast("以下镜头的渲染：" + (clipOf(job.clip)?.name || "某镜头") + "失败：" + (data.exception_message || "请查看 ComfyUI 日志"), true);
   }
 }
 
@@ -7372,18 +7385,18 @@ function runningTime(frames) {
 function sinceChange(when) {
   if (!when) return "";
   const gone = Math.max(0, Date.now() / 1000 - when);
-  if (gone < 90) return "just now";
-  if (gone < 3600) return Math.round(gone / 60) + " min ago";
-  if (gone < 86400) return Math.round(gone / 3600) + " h ago";
-  if (gone < 86400 * 2) return "yesterday";
-  if (gone < 86400 * 14) return Math.floor(gone / 86400) + " days ago";
-  return new Date(when * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", ...(gone > 86400 * 300 ? { year: "numeric" } : {}) });
+  if (gone < 90) return "刚刚";
+  if (gone < 3600) return Math.round(gone / 60) + " 分钟前";
+  if (gone < 86400) return Math.round(gone / 3600) + " 小时前";
+  if (gone < 86400 * 2) return "昨天";
+  if (gone < 86400 * 14) return Math.floor(gone / 86400) + " 天前";
+  return new Date(when * 1000).toLocaleDateString("zh-CN", { day: "numeric", month: "short", ...(gone > 86400 * 300 ? { year: "numeric" } : {}) });
 }
 
 function projectFacts(card) {
   const facts = [card.format || "16:9"];
-  if (card.clips) facts.push(card.clips + (card.clips === 1 ? " clip" : " clips"), runningTime(card.frames || 0));
-  else facts.push("No clips yet");
+  if (card.clips) facts.push(card.clips + (card.clips === 1 ? " 个镜头" : " 个镜头"), runningTime(card.frames || 0));
+  else facts.push("暂无镜头");
   return facts;
 }
 
@@ -7418,12 +7431,12 @@ function projectRow(folder, index) {
   const facts = document.createElement("span");
   facts.className = "project-facts";
   for (const fact of projectFacts(card)) facts.append(Object.assign(document.createElement("span"), { textContent: fact }));
-  if (card.rendering) facts.append(Object.assign(document.createElement("span"), { className: "project-live", textContent: "Rendering" }));
+  if (card.rendering) facts.append(Object.assign(document.createElement("span"), { className: "project-live", textContent: "正在渲染" }));
   text.append(title, facts);
   const when = Object.assign(document.createElement("span"), { className: "project-when", textContent: sinceChange(card.changed) });
   row.append(shot, text, when);
-  row.setAttribute("aria-label", [titleOf(folder), current ? "open now" : "", ...projectFacts(card), card.rendering ? "rendering" : "",
-    when.textContent ? "changed " + when.textContent : ""].filter(Boolean).join(", "));
+  row.setAttribute("aria-label", [titleOf(folder), current ? "当前打开" : "", ...projectFacts(card), card.rendering ? "rendering" : "",
+    when.textContent ? "更新于 " + when.textContent : ""].filter(Boolean).join(", "));
   return row;
 }
 
@@ -7447,8 +7460,8 @@ function fillProjects(keep = null) {
   projectPick.shown = typed ? all.filter((folder) => titleOf(folder).toLowerCase().includes(typed) || folder.toLowerCase().includes(typed)) : all;
   const rows = projectPick.shown.map(projectRow);
   $("projectRows").replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement("p"), { className: "project-none",
-    textContent: "No project has that in its name." })]));
-  $("projectCount").textContent = typed ? projectPick.shown.length + " of " + all.length : all.length + (all.length === 1 ? " project" : " projects");
+    textContent: "没有名称匹配的项目。" })]));
+  $("projectCount").textContent = typed ? projectPick.shown.length + " / " + all.length : all.length + (all.length === 1 ? " 个项目" : " 个项目");
   projectPick.drawn = projectsRead();
   const marked = projectPick.shown.indexOf(keep || (typed ? null : state.folder));
   markProject(Math.max(0, marked), !keep);
@@ -7524,7 +7537,7 @@ async function start() {
   let remembered = null;
   try { remembered = localStorage.getItem("h3take.project"); } catch (_) {}
   const projects = await refreshProjects(remembered);
-  if (!projects.length) await createProject("First scene");
+  if (!projects.length) await createProject("第一个场景");
   else await openProject(projects.includes(remembered) ? remembered : projects[0]);
   connect();
 }
@@ -7535,7 +7548,7 @@ $("newProject").addEventListener("click", () => {
   const hint = $("creatorHint");
   $("creatorName").value = "";
   $("creatorFormat").value = "16:9";
-  hint.textContent = "Its name becomes its folder in ComfyUI's output folder. The format can be changed later.";
+  hint.textContent = "项目名将用于 ComfyUI 输出目录中的文件夹。画幅可稍后更改。";
   hint.classList.remove("bad");
   $("creatorGo").disabled = false;
   $("creator").showModal();
@@ -7551,9 +7564,9 @@ $("creatorForm").addEventListener("submit", async (event) => {
     hint.classList.add("bad");
     $("creatorName").focus();
   };
-  if (!/[A-Za-z0-9]/.test(name)) return bad("Give it a name with letters or numbers.");
-  const folder = name.replace(/[^A-Za-z0-9 _-]/g, "").trim().replaceAll(" ", "_").slice(0, 64);
-  if ((state.projects || []).some((known) => known.toLowerCase() === folder.toLowerCase())) return bad("There is already a project called " + folder.replaceAll("_", " ") + ". Pick another name.");
+  if (!/[A-Za-z0-9\u3400-\u9fff]/.test(name)) return bad("请输入包含字母、数字或中文的项目名。");
+  const folder = name.replace(/[^A-Za-z0-9\u3400-\u9fff _-]/g, "").trim().replaceAll(" ", "_").slice(0, 64);
+  if ((state.projects || []).some((known) => known.toLowerCase() === folder.toLowerCase())) return bad("已有同名项目：" + folder.replaceAll("_", " ") + "。请换一个名称。");
   $("creatorGo").disabled = true;
   try {
     await createProject(name);
@@ -7594,7 +7607,7 @@ function ask({ title, value = null, note = "", confirm, danger = false }) {
       if (value === null) return finish(true);
       const name = input.value.trim();
       if (/[A-Za-z0-9]/.test(name)) return finish(name);
-      $("askerNote").textContent = "Give it a name with letters or numbers.";
+      $("askerNote").textContent = "请输入包含字母、数字或中文的项目名。";
       $("askerNote").classList.add("bad");
       input.focus();
     }
@@ -7613,31 +7626,31 @@ function ask({ title, value = null, note = "", confirm, danger = false }) {
 const projectTitle = () => state.project?.name || (state.folder || "").replaceAll("_", " ");
 
 $("projectRename").addEventListener("click", async () => {
-  const name = await ask({ title: "Rename the project", value: projectTitle(), confirm: "Rename",
-    note: "Only its name changes. Its folder in ComfyUI's output keeps the name it was made with." });
+  const name = await ask({ title: "重命名项目", value: projectTitle(), confirm: "重命名",
+    note: "仅修改显示名称。ComfyUI 输出目录中的项目文件夹保持不变。" });
   if (!name || name === projectTitle()) return;
   try {
     await flush();
     const reply = await postJson("/project/" + state.folder + "/rename", { name, client_id: clientId });
     adopt(reply.project);
     await refreshProjects(state.folder);
-    toast("The project is now called " + name + ".");
+    toast("项目已重命名为 " + name + ".");
   } catch (error) {
     toast(error.message, true);
   }
 });
 
 $("projectDuplicate").addEventListener("click", async () => {
-  const name = await ask({ title: "Duplicate the project", value: projectTitle() + " copy", confirm: "Duplicate",
-    note: "The copy gets its own folder, with the clips, takes and pictures. A project with many finals takes a while to copy." });
+  const name = await ask({ title: "复制项目", value: projectTitle() + " 副本", confirm: "复制",
+    note: "副本会拥有独立文件夹，包含镜头、素材版本及图片。成片较多时复制可能需要一些时间。" });
   if (!name) return;
   try {
     await flush();
-    toast("Copying " + projectTitle() + ".");
+    toast("正在复制 " + projectTitle() + ".");
     const { folder } = await postJson("/project/" + state.folder + "/duplicate", { name, client_id: clientId });
     await refreshProjects(folder);
     await openProject(folder);
-    toast("This is " + name + ", a copy. The original is untouched.");
+    toast("这是 " + name + "的副本，原项目保持不变。");
   } catch (error) {
     toast(error.message, true);
   }
@@ -7646,12 +7659,12 @@ $("projectDuplicate").addEventListener("click", async () => {
 // Project zips: Download as zip makes one to take the project to another machine, Open a project zip opens one as a
 // new project. The zip is made and opened by the server (archive.py); the editor picks the level and shows progress.
 const PACK_LEVELS = [
-  ["all", "Everything", "Every take, the exports, the pictures and sounds"],
-  ["cut", "What the cut uses", "The takes the timeline shows, footage, pictures and sounds"],
-  ["text", "No renders", "The shots, the cast and its pictures, sounds and footage. Render the clips again after opening"],
+  ["all", "全部内容", "所有素材版本、导出文件、图片和音频"],
+  ["cut", "剪辑使用的内容", "时间线使用的素材版本、导入素材、图片和音频"],
+  ["text", "不含渲染结果", "保留分镜、角色参考图、音频及导入素材，打开后可重新渲染"],
 ];
 const sizeText = (bytes) => (bytes >= 1e9 ? (bytes / 1e9).toFixed(2) + " GB" : (bytes / 1e6).toFixed(1) + " MB");
-const OLD_SERVER = "This ComfyUI started before H3 Editor was updated: restart ComfyUI to use project zips.";
+const OLD_SERVER = "此 ComfyUI 启动时尚未加载新版编辑器，请重启后使用项目压缩包功能。";
 
 $("projectDownload").addEventListener("click", async () => {
   try {
@@ -7659,8 +7672,8 @@ $("projectDownload").addEventListener("click", async () => {
   } catch (_) {}
   const levels = $("packerLevels");
   const result = $("packerResult");
-  $("packerTitle").textContent = "Download " + projectTitle();
-  result.textContent = "Measuring the project.";
+  $("packerTitle").textContent = "下载 " + projectTitle();
+  result.textContent = "正在统计项目。";
   result.classList.remove("bad");
   levels.replaceChildren();
   $("packerGo").disabled = true;
@@ -7678,8 +7691,8 @@ $("projectDownload").addEventListener("click", async () => {
   const say = (keep) => {
     const outside = sizes[keep]?.outside || 0;
     result.textContent = outside
-      ? outside + (outside === 1 ? " file it uses is" : " files it uses are") + " in another project, and the zip cannot carry " + (outside === 1 ? "it." : "them.")
-      : keep === "all" ? "Takes left out of the smaller zips can be rendered again: the shots, seeds and settings are in every zip." : "";
+      ? outside + (outside === 1 ? " 个引用文件" : " 个引用文件") + "位于其他项目，无法打包 " + (outside === 1 ? "it." : "them.")
+      : keep === "all" ? "较小压缩包省略的素材版本可重新渲染；所有压缩包均保留分镜、种子及设置。" : "";
   };
   levels.replaceChildren(...PACK_LEVELS.map(([keep, title, about]) => {
     const row = document.createElement("label");
@@ -7715,7 +7728,7 @@ $("projectDownload").addEventListener("click", async () => {
     link.click();
     link.remove();
     $("packer").close();
-    toast("Making the zip of " + projectTitle() + ", " + sizeText(sizes[keep]?.bytes || 0) + ". The download starts when it is ready.");
+    toast("正在打包 " + projectTitle() + ", " + sizeText(sizes[keep]?.bytes || 0) + "，准备完成后开始下载。");
   };
 });
 $("packerClose").addEventListener("click", () => $("packer").close());
@@ -7734,15 +7747,15 @@ $("projectOpen").addEventListener("click", async () => {
   $("openerFile").textContent = file.name + ", " + sizeText(file.size);
   bar.classList.remove("working");
   fill.style.width = "0%";
-  result.textContent = "Uploading.";
+  result.textContent = "正在上传。";
   result.classList.remove("bad");
-  cancel.textContent = "Cancel";
+  cancel.textContent = "取消";
   dialog.showModal();
   const fail = (message) => {
     bar.classList.remove("working");
     result.textContent = message;
     result.classList.add("bad");
-    cancel.textContent = "Close";
+    cancel.textContent = "关闭";
     cancel.onclick = () => dialog.close();
   };
   // Sent as the body, as it is: the server writes it to disk as it arrives, whatever its size.
@@ -7754,49 +7767,49 @@ $("projectOpen").addEventListener("click", async () => {
     const share = event.loaded / event.total;
     fill.style.width = Math.round(share * 100) + "%";
     bar.setAttribute("aria-valuenow", String(Math.round(share * 100)));
-    result.textContent = "Uploading, " + sizeText(event.loaded) + " of " + sizeText(event.total) + ".";
+    result.textContent = "正在上传，" + sizeText(event.loaded) + " / " + sizeText(event.total) + ".";
   };
   request.upload.onload = () => {
     bar.classList.add("working");
-    result.textContent = "Unpacking the project.";
+    result.textContent = "正在解压项目。";
   };
-  request.onerror = () => fail("The upload stopped. Is ComfyUI still running?");
+  request.onerror = () => fail("上传已停止，请确认 ComfyUI 仍在运行。");
   request.onload = async () => {
     let reply = {};
     try { reply = JSON.parse(request.responseText); } catch (_) {}
     if (request.status !== 200) {
       const said = reply.error ? reply.error.charAt(0).toUpperCase() + reply.error.slice(1) + "." : "";
-      return fail(said || (request.status === 404 || request.status === 405 ? OLD_SERVER : "ComfyUI refused the zip (" + request.status + ")."));
+      return fail(said || (request.status === 404 || request.status === 405 ? OLD_SERVER : "ComfyUI 拒绝了压缩包（" + request.status + ")."));
     }
     dialog.close();
     await refreshProjects(reply.folder);
     await openProject(reply.folder);
     const notes = [];
-    if (reply.missing_loras?.length) notes.push("Not on this machine: " + reply.missing_loras.join(", ") + ".");
-    if (reply.patches_off?.length) notes.push("Its model patches are switched off: tick the ones you trust in the Project tab to render with them.");
-    if (reply.keep === "text") notes.push("It holds no renders: render its clips to see them.");
-    toast("Opened " + reply.name + "." + (notes.length ? " " + notes.join(" ") : ""));
+    if (reply.missing_loras?.length) notes.push("本机缺少：" + reply.missing_loras.join(", ") + ".");
+    if (reply.patches_off?.length) notes.push("模型补丁已关闭。可在“项目”面板中仅勾选你信任的补丁。");
+    if (reply.keep === "text") notes.push("此项目不含渲染结果，请渲染镜头后查看。");
+    toast("已打开 " + reply.name + "." + (notes.length ? " " + notes.join(" ") : ""));
   };
   cancel.onclick = () => {
     request.abort();
     dialog.close();
-    toast("Stopped opening " + file.name + ". Nothing was added.");
+    toast("已停止打开 " + file.name + "，未添加任何内容。");
   };
   request.send(file);
 });
 
 $("projectDelete").addEventListener("click", async () => {
   const title = projectTitle();
-  const sure = await ask({ title: "Delete " + title + "?", confirm: "Delete project", danger: true,
-    note: "It moves to the .trash folder inside h3take_projects in ComfyUI's output, with all its renders. Nothing is erased: move the folder back by hand to have it again." });
+  const sure = await ask({ title: "删除 " + title + "?", confirm: "删除项目", danger: true,
+    note: "项目及其渲染结果将移入 ComfyUI 输出目录 h3take_projects 下的 .trash 文件夹，不会永久删除。手动移回文件夹即可恢复。" });
   if (!sure) return;
   try {
     await flush();
     const { trash } = await api("/project/" + state.folder, { method: "DELETE" });
     const left = await refreshProjects(null);
     if (left.length) await openProject(left[0]);
-    else await createProject("First scene");
-    toast(title + " is in " + trash + ".");
+    else await createProject("第一个场景");
+    toast(title + "已移入 " + trash + ".");
   } catch (error) {
     toast(error.message, true);
   }
@@ -7841,7 +7854,7 @@ clipList.addEventListener("drop", (event) => {
 $("close").addEventListener("click", () => window.parent.postMessage("h3-editor-close", location.origin));
 $("renderAll").addEventListener("click", () => {
   const waiting = sorted().map((i) => clipOf(i.clip)).filter((c, i, all) => c && !c.takes.length && all.indexOf(c) === i);
-  if (!waiting.length) return toast("Every clip on the timeline already has a render.");
+  if (!waiting.length) return toast("时间线上的所有镜头均已有渲染结果。");
   const ready = waiting.filter((c) => c.action.trim() && !jobFor(c.id));
   const blank = waiting.filter((c) => !c.action.trim());
   (async () => {
@@ -7861,7 +7874,7 @@ $("renderAll").addEventListener("click", () => {
       }
     }
     if (blank.length) {
-      toast((blank.length === 1 ? blank[0].name + " has" : blank.length + " clips have") + " nothing in What happens yet, so " + (blank.length === 1 ? "it was" : "they were") + " left out.", true);
+      toast((blank.length === 1 ? blank[0].name + "未填写" : blank.length + " 个镜头未填写") + "画面描述，因此" + (blank.length === 1 ? "该镜头" : "这些镜头") + "已被跳过。", true);
     }
   })();
 });
@@ -7882,22 +7895,22 @@ async function openExporter() {
     return;
   }
   if (!plan.clips) {
-    toast("There are no rendered clips on the timeline to export.", true);
+    toast("时间线上没有可导出的已渲染片段。", true);
     return;
   }
   const full = [plan.width, plan.height];
   const even = (side, scale) => Math.max(2, 2 * Math.round((side * scale) / 2));
-  $("exporterScale").replaceChildren(...[[1, "As rendered"], [0.75, "Three quarters"], [0.5, "Half"]].map(([scale, label]) => {
+  $("exporterScale").replaceChildren(...[[1, "原始渲染尺寸"], [0.75, "四分之三"], [0.5, "一半"]].map(([scale, label]) => {
     const option = document.createElement("option");
     option.value = String(scale);
     option.textContent = label + ", " + even(full[0], scale) + " x " + even(full[1], scale);
     return option;
   }));
-  $("exporterSummary").textContent = timecode(plan.frames) + " (" + plan.seconds + " seconds), " + plan.clips + (plan.clips === 1 ? " clip" : " clips") + ", with sound, as an MP4.";
+  $("exporterSummary").textContent = timecode(plan.frames) + "（" + plan.seconds + " 秒），" + plan.clips + " 个镜头，含音频，输出 MP4。";
   const notes = [];
-  if (plan.drafts) notes.push(plan.drafts + (plan.drafts === 1 ? " clip is still a draft" : " clips are still drafts") + ". Drafts are small, so they will look soft next to finals.");
-  if (plan.missing) notes.push(plan.missing + (plan.missing === 1 ? " clip has no render and is" : " clips have no render and are") + " left out.");
-  if (plan.gaps) notes.push(plan.gaps + (plan.gaps === 1 ? " gap" : " gaps") + " on the timeline will be black and silent.");
+  if (plan.drafts) notes.push(plan.drafts + (plan.drafts === 1 ? " 个镜头仍为草稿" : " 个镜头仍为草稿") + "。草稿尺寸较小，与成片并排时可能偏模糊。");
+  if (plan.missing) notes.push(plan.missing + (plan.missing === 1 ? " 个镜头尚未渲染，" : " 个镜头尚未渲染，") + "已被跳过。");
+  if (plan.gaps) notes.push(plan.gaps + (plan.gaps === 1 ? " 处空隙" : " 处空隙") + "将显示为无声黑场。");
   $("exporterNotes").replaceChildren(...notes.map((text) => {
     const item = document.createElement("li");
     item.textContent = text;
@@ -7905,11 +7918,11 @@ async function openExporter() {
   }));
   $("exporterName").value = state.folder;
   try { $("exporterDownload").checked = localStorage.getItem("h3take.export.download") !== "no"; } catch (_) {}
-  result.textContent = "It is saved in ComfyUI's output folder, under " + "h3take_projects/" + state.folder + "/exports.";
+  result.textContent = "文件保存在 ComfyUI 输出目录：" + "h3take_projects/" + state.folder + "/exports.";
   result.classList.remove("bad");
   $("exporterLink").hidden = true;
   go.disabled = false;
-  go.textContent = "Export";
+  go.textContent = "导出";
   dialog.showModal();
 }
 
@@ -7920,10 +7933,10 @@ async function runExport() {
   const download = $("exporterDownload").checked;
   try { localStorage.setItem("h3take.export.download", download ? "yes" : "no"); } catch (_) {}
   go.disabled = true;
-  go.textContent = "Exporting";
+  go.textContent = "正在导出";
   link.hidden = true;
   result.classList.remove("bad");
-  result.textContent = "Joining the clips. A long cut can take a minute or two.";
+  result.textContent = "正在拼接片段。较长的剪辑可能需要一两分钟。";
   try {
     const made = await postJson("/project/" + state.folder + "/export", {
       scale: Number($("exporterScale").value), quality: $("exporterQuality").value, name: $("exporterName").value.trim(),
@@ -7931,15 +7944,15 @@ async function runExport() {
     link.href = viewUrl(made.filename, made.subfolder);
     link.setAttribute("download", made.filename);
     link.hidden = false;
-    link.textContent = download ? "Download again" : "Download";
-    result.textContent = "Saved " + made.filename + ", " + megabytes(made.bytes) + ", in " + made.subfolder + " of ComfyUI's output folder.";
+    link.textContent = download ? "再次下载" : "下载";
+    result.textContent = "已保存 " + made.filename + ", " + megabytes(made.bytes) + "，位于 " + made.subfolder + "（ComfyUI 输出目录）。";
     if (download) link.click();
   } catch (error) {
     result.classList.add("bad");
     result.textContent = error.message;
   }
   go.disabled = false;
-  go.textContent = "Export again";
+  go.textContent = "再次导出";
 }
 
 $("export").addEventListener("click", openExporter);
@@ -8259,7 +8272,7 @@ function drawNotes() {
     const line = document.createElement("button");
     line.className = "note-line" + (note.status === "resolved" ? " done" : "");
     line.textContent = note.text;
-    line.title = (note.status === "resolved" ? "Resolved. " : "") + "Show this note in the Project tab";
+    line.title = (note.status === "resolved" ? "已解决。" : "") + "在“项目”面板中查看此标注";
     line.addEventListener("click", () => showNoteInList(note.id));
     return line;
   }));
@@ -8269,11 +8282,11 @@ function startNote() {
   if (state.playing) setPlaying(false);
   const target = noteTarget();
   if (!target) {
-    toast("Stop on a rendered frame to write a note there.");
+    toast("请暂停在已渲染画面上，再添加标注。");
     return;
   }
   if (!frameRect()) {
-    toast("Wait for the picture to load, then press N again.");
+    toast("请等待画面加载后，再按 N。");
     return;
   }
   let range = null;
@@ -8292,7 +8305,7 @@ function startNote() {
     noting.active.frame = noteTarget()?.frame ?? range.from;
   }
   const box = $("noteBox");
-  $("noteWhere").textContent = target.clip.name + ", " + (range ? "frames " + range.from + " to " + range.to : "frame " + noting.active.frame) + " of take " + (target.clip.takes.indexOf(target.take) + 1);
+  $("noteWhere").textContent = target.clip.name + ", " + (range ? "帧 " + range.from + "至 " + range.to : "帧 " + noting.active.frame) + "，素材版本 " + (target.clip.takes.indexOf(target.take) + 1);
   $("noteText").value = "";
   setNoteTool("rect");
   box.classList.remove("aside", "moved");
@@ -8307,8 +8320,8 @@ function setNoteTool(tool) {
   if (!noting.active) return;
   noting.active.tool = tool;
   for (const button of document.querySelectorAll("#noteTools button")) button.setAttribute("aria-pressed", String(button.dataset.tool === tool));
-  $("noteHint").textContent = tool === "stroke" ? "Draw on the picture. Each stroke adds to the drawing."
-    : tool === "pin" ? "Click the picture to pin the spot." : "Drag a box on the picture, or click to pin a spot.";
+  $("noteHint").textContent = tool === "stroke" ? "在画面上绘制，每一笔都会加入标注。"
+    : tool === "pin" ? "点击画面以标记位置。" : "拖动画框，或点击标记位置。";
 }
 
 function closeNote() {
@@ -8339,7 +8352,7 @@ async function saveNote() {
   if (!writing) return;
   const text = $("noteText").value.trim();
   if (!text) {
-    $("noteHint").textContent = "Write what should change here, then press Enter.";
+    $("noteHint").textContent = "填写需要修改的内容，然后按 Enter。";
     $("noteText").focus();
     return;
   }
@@ -8354,7 +8367,7 @@ async function saveNote() {
   renderInspector();
   renderBin();
   drawNotes();
-  toast("Note saved. Agents see it in the summary and with h3.py notes.");
+  toast("标注已保存。Agent 可通过项目摘要或 h3.py notes 读取。");
   const folder = state.folder;
   try {
     const blob = await still;
@@ -8407,7 +8420,7 @@ function removeNote(note) {
   renderInspector();
   renderBin();
   drawNotes();
-  toast("Deleted the note.", false, undoAction);
+  toast("标注已删除。", false, undoAction);
 }
 
 function showNoteInList(id) {
@@ -8429,11 +8442,11 @@ function notesSection() {
     row.dataset.note = note.id;
     const jump = document.createElement("button");
     jump.className = "note-jump";
-    jump.title = "Go to this frame";
+    jump.title = "跳转到此帧";
     const where = document.createElement("span");
     where.className = "note-where";
     const older = activeTake(clip)?.id !== note.take;
-    where.textContent = clip.name + ", " + (place === null ? "not in the cut" : timecode(place)) + (note.range ? ", a range" : "") + (older ? ", on an earlier take" : "");
+    where.textContent = clip.name + ", " + (place === null ? "未用于剪辑" : timecode(place)) + (note.range ? "，范围标注" : "") + (older ? "，位于较早版本" : "");
     const text = document.createElement("span");
     text.className = "note-text";
     text.textContent = note.text;
@@ -8447,15 +8460,15 @@ function notesSection() {
     jump.addEventListener("click", () => goToNote(note));
     const done = document.createElement("button");
     done.className = "quiet";
-    done.textContent = note.status === "resolved" ? "Reopen" : "Resolve";
+    done.textContent = note.status === "resolved" ? "重新打开" : "标记已解决";
     done.addEventListener("click", () => setNoteStatus(note, note.status === "resolved"));
-    row.append(jump, done, trashButton("Delete this note", () => removeNote(note)));
+    row.append(jump, done, trashButton("删除此标注", () => removeNote(note)));
     return row;
   });
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "Stop on a frame and press N to write a note. Agents read them with h3.py notes, each with a picture of its frame.";
-  return section("Notes" + (open.length ? ", " + open.length + " open" : ""), [...rows, hint], "note");
+  hint.textContent = "暂停在某帧后按 N 添加标注。Agent 可通过 h3.py notes 读取标注及对应图片。";
+  return section("标注" + (open.length ? ", " + open.length + " 条未解决" : ""), [...rows, hint], "note");
 }
 
 // Marks on the ruler where each note's frame is in the cut.
@@ -8470,7 +8483,7 @@ function noteMarks() {
       const end = notePlace({ clip: note.clip, frame: note.range.to });
       if (end !== null && end > place) mark.style.width = Math.max(6, px(end - place)) + "px";
     }
-    mark.title = (note.status === "resolved" ? "Resolved: " : "Note: ") + note.text;
+    mark.title = (note.status === "resolved" ? "已解决：" : "标注：") + note.text;
     mark.setAttribute("aria-label", mark.title);
     mark.addEventListener("pointerdown", (event) => event.stopPropagation());
     mark.addEventListener("click", (event) => {
@@ -8575,5 +8588,13 @@ function bindNoteLayer() {
   for (const video of [$("videoA"), $("videoB")]) video.addEventListener("seeked", () => drawNotes());
 }
 bindNoteLayer();
+
+const extensionContext = { state, api, postJson, toast, adopt, async flush() {
+  await flush();
+  if (unsaved()) throw new Error("请先保存当前修改，再准备操作预览。");
+} };
+const providerPanel = installProviderPanel(extensionContext);
+installEditingPanel({ ...extensionContext, review: providerPanel.review, viewing });
+installConversation({ ...extensionContext, ...providerPanel });
 
 start().catch((error) => toast(error.message, true));

@@ -1,0 +1,16 @@
+{
+  "budget_cents": 0,
+  "max_active": 2,
+  "daily_jobs": 20,
+  "providers": [
+    {
+      "id": "minimax",
+      "protocol": "minimax-video-v1",
+      "host": "api.minimax.io",
+      "credential_env": "MINIMAX_API_KEY",
+      "download_hosts": [],
+      "enabled": false,
+      "quotes_cents": {}
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "source": "synthetic audio only; no microphone",
+  "checks": [
+    {
+      "name": "consent_required",
+      "status": 409,
+      "passed": true
+    },
+    {
+      "name": "actual_local_transcription",
+      "result": {
+        "text": "天家一個鏡頭,名稱是指傳",
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.58,
+            "text": "天家一個鏡頭,名稱是指傳"
+          }
+        ],
+        "language": "zh",
+        "seconds": 3.997,
+        "network": "local-only",
+        "audio_retained": false
+      },
+      "expected": "添加一个镜头，名称是纸船。",
+      "quality": "manual correction required; not an accuracy pass"
+    },
+    {
+      "name": "actual_worker_cancel",
+      "cancel": {
+        "cancel_requested": true,
+        "audio_retained": false
+      },
+      "response_status": 409,
+      "body": {
+        "error": "本次转写已取消",
+        "code": "cancelled"
+      },
+      "temporary_removed": true
+    },
+    {
+      "name": "missing_audio_export_blocked",
+      "status": 409,
+      "health": {
+        "revision": 10,
+        "missing": [
+          {
+            "kind": "sounds",
+            "id": "s932c50e0",
+            "name": "偏移半秒的测试音轨",
+            "reason": "文件缺失"
+          }
+        ],
+        "export_ready": false,
+        "notice": "缺失音频或特效时阻止导出，请恢复素材或明确移除对应条目后重试。未使用的镜头缺少素材不影响已完整的时间线。"
+      },
+      "passed": true
+    }
+  ]
+}

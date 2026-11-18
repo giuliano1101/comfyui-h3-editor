@@ -1,6 +1,9 @@
 import os
 import sys
 import tempfile
+import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import unittest
 from unittest import mock
 
@@ -20,7 +23,7 @@ class FfmpegTest(unittest.TestCase):
 
     def test_only_ffmpeg_is_replaced(self):
         with mock.patch.dict(os.environ, {"H3TAKE_FFMPEG": "/opt/own/ffmpeg"}):
-            self.assertEqual(media.command(["ffmpeg", "-i", "a.mp4"]), ["/opt/own/ffmpeg", "-i", "a.mp4"])
+            self.assertEqual(media.command(["ffmpeg", "-i", "a.mp4"]), ["/opt/own/ffmpeg", "-protocol_whitelist", "file,pipe", "-format_whitelist", media.INPUT_FORMATS, "-i", "a.mp4"])
             self.assertEqual(media.command(["other", "ffmpeg"]), ["other", "ffmpeg"])
 
     def test_the_packaged_ffmpeg_comes_before_the_path(self):
@@ -39,6 +42,29 @@ class FfmpegTest(unittest.TestCase):
 
 @unittest.skipIf(av is None, "needs PyAV")
 class VideoInfoTest(unittest.TestCase):
+    def test_disguised_playlist_cannot_fetch_a_remote_segment(self):
+        calls=[]
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                calls.append(self.path);self.send_response(404);self.end_headers()
+            def log_message(self,*args):
+                pass
+        server=HTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                path=os.path.join(folder,'disguised.mp4')
+                with open(path,'w',encoding='utf-8') as playlist:
+                    playlist.write('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nhttp://127.0.0.1:%d/segment.ts\n#EXT-X-ENDLIST\n'%server.server_port)
+                with self.assertRaises(Exception):
+                    media.has_sound(path)
+                result=subprocess.run(media.command(['ffmpeg','-v','error','-f','hls','-i',path,'-f','null','-']),capture_output=True,timeout=10)
+                self.assertNotEqual(result.returncode,0)
+                self.assertIn(b'whitelist',result.stderr.lower())
+                self.assertEqual(calls,[])
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=2)
+
     def make(self, path, frames, sound):
         with av.open(path, "w") as container:
             video = container.add_stream("mpeg4", rate=24)

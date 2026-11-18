@@ -1,0 +1,121 @@
+{
+  "environment": "real ComfyUI 0.45.0; isolated output; synthetic media",
+  "project": "H3_综合验收_20261118",
+  "checks": [
+    {
+      "name": "media_import",
+      "revision": 3,
+      "frames": 95,
+      "clip": "ccdf83a94",
+      "source_sha256": "71d7dd6f57a5fef52426607003ee0a8e67879ddfb7c5a52ad6a782b3df831be1"
+    },
+    {
+      "name": "waveform_sync",
+      "start_frames": 12,
+      "expected_frames": 12,
+      "passed": true
+    },
+    {
+      "name": "subtitle_import",
+      "count": 2,
+      "revision": 6
+    },
+    {
+      "name": "health",
+      "revision": 6,
+      "missing": [],
+      "export_ready": true,
+      "notice": "缺失音频或特效时阻止导出，请恢复素材或明确移除对应条目后重试。未使用的镜头缺少素材不影响已完整的时间线。"
+    },
+    {
+      "name": "export",
+      "filename": "中文验收成片_001.mp4",
+      "subfolder": "h3take_projects/H3_综合验收_20261118/exports",
+      "bytes": 586892,
+      "plan": {
+        "width": 640,
+        "height": 352,
+        "frames": 95,
+        "seconds": 3.96,
+        "clips": 1,
+        "drafts": 0,
+        "missing": 0,
+        "gaps": 0,
+        "effects": 0,
+        "effects_missing": 0,
+        "effects_stale": 0
+      },
+      "sha256": "1b7ddab6b2af78b84983338c77c80d61215e6c58f60605b9c00494ea28ac32ba",
+      "path": "ComfyUI\\output\\h3take_projects\\H3_综合验收_20261118\\exports\\中文验收成片_001.mp4"
+    },
+    {
+      "name": "decoded_output",
+      "frames": 95,
+      "width": 640,
+      "height": 352,
+      "audio_streams": 1
+    },
+    {
+      "name": "subtitle_pixels",
+      "bottom_mean_change": 3.2907407407407407,
+      "upper_mean_change": 0.0459375,
+      "note": "pixel comparison; visual review separately"
+    },
+    {
+      "name": "archive_restore",
+      "restored": "H3_综合验收_20261118_2",
+      "subtitle_equal": true,
+      "sound_count": 1,
+      "old_project_preserved": true,
+      "archive_sha256": "0a3b27fdec233cdbfafd1f864fa516597e8d7f7cf979d4a480cdd56e1ad2b6e7"
+    },
+    {
+      "name": "actual_comfy_workflow",
+      "prompt_id": "37fc07ae-164b-4812-926e-79a01d31fed4",
+      "status": {
+        "status_str": "success",
+        "completed": true,
+        "messages": [
+          [
+            "execution_start",
+            {
+              "prompt_id": "37fc07ae-164b-4812-926e-79a01d31fed4",
+              "timestamp": 1794966444537
+            }
+          ],
+          [
+            "execution_cached",
+            {
+              "nodes": [],
+              "prompt_id": "37fc07ae-164b-4812-926e-79a01d31fed4",
+              "timestamp": 1794966444538
+            }
+          ],
+          [
+            "execution_success",
+            {
+              "prompt_id": "37fc07ae-164b-4812-926e-79a01d31fed4",
+              "timestamp": 1794966444590
+            }
+          ]
+        ]
+      },
+      "outputs": {
+        "2": {
+          "images": [
+            {
+              "filename": "empty_image_00001_.png",
+              "subfolder": "H3_Acceptance",
+              "type": "output",
+              "metadata": {
+                "kind": "image",
+                "width": 64,
+                "height": 64
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

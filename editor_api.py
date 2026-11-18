@@ -11,12 +11,14 @@ import subprocess
 import sys
 import time
 import uuid
+import tempfile
 
 from aiohttp import web
 
 import folder_paths
 
 from . import archive
+from . import captions
 from . import cuts as cutscore
 from . import listen as soundscore
 from . import detail as finescore
@@ -129,7 +131,13 @@ async def run_bytes(args):
     except RuntimeError as error:
         raise web.HTTPInternalServerError(text=str(error))
     process = await asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = await process.communicate()
+    try:
+        out, err = await process.communicate()
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+        raise
     if process.returncode != 0:
         raise web.HTTPInternalServerError(text=err.decode(errors="replace")[-600:])
     return out
@@ -2048,6 +2056,12 @@ async def export(request):
     except ValueError:
         body = {}
     body = body if isinstance(body, dict) else {}
+    return await export_snapshot(name, data, body)
+
+
+async def export_snapshot(name, data, body=None):
+    """Export one revision's snapshot, also used by the approved MCP bridge."""
+    body = body or {}
     scale = body.get("scale", 1.0)
     quality = body.get("quality") or "high"
     if scale not in store.EXPORT_SCALES or quality not in store.EXPORT_QUALITY:
@@ -2059,6 +2073,10 @@ async def export(request):
         raise web.HTTPBadRequest(text=str(error))
     if body.get("plan"):
         return web.json_response({"plan": plan, "name": name})
+    from .editing_tools import health
+    missing = [row for row in health(sys.modules[__name__], data)['missing'] if row['kind'] in ('effects','sounds')]
+    if missing:
+        raise web.HTTPConflict(text='存在缺失音频或特效，请先打开“剪辑工具 → 工程检查”，恢复素材或移除对应条目。')
     paths = {}
     for clip in data.get("clips", []):
         take = store.active_take(clip)
@@ -2069,9 +2087,16 @@ async def export(request):
     # The file is named after the project, or after what the user typed, and numbered so nothing is overwritten.
     stem = store.slug(body["name"]) if str(body.get("name") or "").strip() else name
     number = 1
-    while os.path.exists(os.path.join(folder, "%s_%03d.mp4" % (stem, number))):
-        number += 1
-    target = os.path.join(folder, "%s_%03d.mp4" % (stem, number))
+    while True:
+        target = os.path.join(folder, "%s_%03d.mp4" % (stem, number))
+        try:
+            # Reserve atomically before FFmpeg starts. Parallel exports must not
+            # both select the same absent filename and then overwrite each other.
+            with open(target, 'xb'):
+                pass
+            break
+        except FileExistsError:
+            number += 1
     sound_paths = {}
     for sound in data.get("sounds") or []:
         try:
@@ -2095,8 +2120,21 @@ async def export(request):
         args = store.export_command(data, paths, target, scale=scale, quality=quality, sound_paths=sound_paths,
                                     effect_paths=effect_paths)
     except ValueError as error:
+        os.remove(target)
         raise web.HTTPBadRequest(text=str(error))
-    await run(args)
+    try:
+        with tempfile.TemporaryDirectory(prefix="h3-captions-") as scratch:
+            if data.get("subtitles"):
+                subtitle_path = os.path.join(scratch, "captions.ass")
+                with open(subtitle_path, "w", encoding="utf-8") as subtitle_file:
+                    subtitle_file.write(captions.ass(data, plan["width"], plan["height"]))
+                args = store.export_command(data, paths, target, scale=scale, quality=quality, sound_paths=sound_paths,
+                                            effect_paths=effect_paths, subtitle_path=subtitle_path)
+            await run(args)
+    except BaseException:
+        if os.path.exists(target):
+            os.remove(target)
+        raise
     return web.json_response({
         "filename": os.path.basename(target),
         "subfolder": "%s/%s/exports" % (store.ROOT, name),
@@ -2153,13 +2191,25 @@ def install():
     routes = PromptServer.instance.routes
     module = sys.modules[__name__].__name__
 
+    from . import provider_api
+    # Private state must stay outside output and its /view download route.
+    private = os.path.join(folder_paths.get_user_directory(), "h3-provider")
+    runtime = provider_api.Runtime(sys.modules[module], private)
+    PromptServer.instance.h3_provider_runtime = runtime
+
     def bound(handler):
         async def call(request):
-            return await getattr(sys.modules[module], handler)(request)
+            if handler == "page":
+                runtime.access.local(request, navigation=True)
+                response = await getattr(sys.modules[module], handler)(request)
+                response.headers["Referrer-Policy"] = "same-origin"
+                response.headers["X-Frame-Options"] = "SAMEORIGIN"
+                return response
+            return await runtime.dispatch(request, handler)
 
         return call
 
-    for method, path, handler in ROUTES:
+    for method, path, handler in ROUTES + provider_api.ROUTES:
         routes.route(method, path)(bound(handler))
     routes.static("/h3take/editor-files/", PAGE)
     PromptServer.instance.loop.call_soon_threadsafe(lambda: getattr(sys.modules[module], "ensure_watcher")())

@@ -206,27 +206,33 @@ class Int8FusedFc2BypassTest(unittest.TestCase):
 @unittest.skipIf(torch is None, "needs torch and ComfyUI")
 class FactorizedHyperFlowAttachmentTest(unittest.TestCase):
     def test_lowrank_and_split_qkv_layers_attach_at_runtime_including_trainer_keys(self):
+        import gc
         import test_hyperflow
         DIMS, tiny_checkpoint = test_hyperflow.DIMS, test_hyperflow.tiny_checkpoint
 
-        with tempfile.TemporaryDirectory() as folder:
-            ckpt = os.path.join(folder, "hf_tiny.safetensors")
-            tiny_checkpoint(ckpt)
-            patcher = hyperflow.load(ckpt)
+        # Keep the mapped checkpoint alive until the model leaves scope. Windows
+        # refuses deleting an mmap-backed checkpoint while assertions use it.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.addCleanup(gc.collect)
+        folder = temporary.name
+        ckpt = os.path.join(folder, "hf_tiny.safetensors")
+        tiny_checkpoint(ckpt)
+        patcher = hyperflow.load(ckpt)
 
-            hidden = DIMS["hidden_size"]
-            ffn = DIMS["ffn_hidden_size"]
-            lora_path = os.path.join(folder, "factorized_lora.safetensors")
-            save_file({
-                # SplitQKV of LowRankLinears in block 1 (trainer lora_unet_ key format):
-                "lora_unet_blocks_1_attn_qkv_proj.lora_down.weight": torch.full((2, hidden), 0.1, dtype=torch.float32),
-                "lora_unet_blocks_1_attn_qkv_proj.lora_up.weight": torch.full((hidden * 3, 2), 0.1, dtype=torch.float32),
-                # LowRankLinear mlp.fc2 in block 2 (mirrors fl2va blocks.46.mlp.fc2):
-                "diffusion_model.blocks.2.mlp.fc2.lora_A.weight": torch.full((1, ffn), 0.2, dtype=torch.float32),
-                "diffusion_model.blocks.2.mlp.fc2.lora_B.weight": torch.full((hidden, 1), 0.2, dtype=torch.float32),
-            }, lora_path)
+        hidden = DIMS["hidden_size"]
+        ffn = DIMS["ffn_hidden_size"]
+        lora_path = os.path.join(folder, "factorized_lora.safetensors")
+        save_file({
+            # SplitQKV of LowRankLinears in block 1 (trainer lora_unet_ key format):
+            "lora_unet_blocks_1_attn_qkv_proj.lora_down.weight": torch.full((2, hidden), 0.1, dtype=torch.float32),
+            "lora_unet_blocks_1_attn_qkv_proj.lora_up.weight": torch.full((hidden * 3, 2), 0.1, dtype=torch.float32),
+            # LowRankLinear mlp.fc2 in block 2 (mirrors fl2va blocks.46.mlp.fc2):
+            "diffusion_model.blocks.2.mlp.fc2.lora_A.weight": torch.full((1, ffn), 0.2, dtype=torch.float32),
+            "diffusion_model.blocks.2.mlp.fc2.lora_B.weight": torch.full((hidden, 1), 0.2, dtype=torch.float32),
+        }, lora_path)
 
-            patched = h3lora.apply(patcher, lora_path, "factorized_lora", 1.5, mode="auto")
+        patched = h3lora.apply(patcher, lora_path, "factorized_lora", 1.5, mode="auto")
 
         stack = patched.get_attachment(h3lora.STACK)
         self.assertEqual(len(stack), 1)

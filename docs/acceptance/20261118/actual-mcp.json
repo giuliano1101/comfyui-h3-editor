@@ -1,0 +1,465 @@
+{
+  "client": "official Python MCP SDK 2.3.0 / stdio",
+  "server": "real isolated ComfyUI 0.45.0",
+  "checks": [
+    {
+      "name": "readonly_connection",
+      "protocol": "2025-06-18",
+      "tool_count": 8,
+      "write_tools_hidden": true,
+      "out_of_scope_rejected": true,
+      "mutation_rejected": true
+    },
+    {
+      "name": "edit_preview",
+      "revision": 6,
+      "approval_required": true,
+      "proposal": {
+        "id": "ivVm6_98OSmOh3sJxMlEsMHW3JK0lbBB",
+        "action": "ops",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 6,
+          "ops": [
+            {
+              "op": "update_clip",
+              "clip": "ccdf83a94",
+              "fields": {
+                "name": "Agent 已确认的合成片段"
+              }
+            }
+          ]
+        },
+        "expires": 1794966849.1854725,
+        "approved": false,
+        "requested_by": "agent",
+        "notice": "Review in the local editor. History restore cannot undo external charges or disclosure."
+      }
+    },
+    {
+      "name": "edit_preview",
+      "revision": 6,
+      "approval_required": true,
+      "proposal": {
+        "id": "ivVm6_98OSmOh3sJxMlEsMHW3JK0lbBB",
+        "action": "ops",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 6,
+          "ops": [
+            {
+              "op": "update_clip",
+              "clip": "ccdf83a94",
+              "fields": {
+                "name": "Agent 已确认的合成片段"
+              }
+            }
+          ]
+        },
+        "expires": 1794966849.1854725,
+        "approved": false,
+        "requested_by": "agent",
+        "notice": "Review in the local editor. History restore cannot undo external charges or disclosure."
+      }
+    },
+    {
+      "name": "edit_execute",
+      "result": {
+        "revision": 7,
+        "summary": {
+          "sounds": [
+            {
+              "sound": "s932c50e0",
+              "name": "偏移半秒的测试音轨",
+              "lane": 0,
+              "start": 12,
+              "end": 96,
+              "at": "00:00:12",
+              "offset": 0.0,
+              "gain": 0.5
+            }
+          ],
+          "effects": [],
+          "name": "H3_综合验收_20261118",
+          "revision": 7,
+          "style": "Live-action, cinematic",
+          "format": "16:9",
+          "language": "English",
+          "profile": "h3",
+          "sizes": {
+            "draft": {
+              "width": 640,
+              "height": 352,
+              "name": "small"
+            },
+            "final": {
+              "width": 640,
+              "height": 352,
+              "name": "small"
+            }
+          },
+          "checkpoints": [],
+          "loras": [],
+          "patches": [],
+          "frames": 95,
+          "length": "00:03:23",
+          "fps": 24,
+          "cast": [],
+          "bins": [],
+          "clips": [
+            {
+              "id": "ccdf83a94",
+              "name": "Agent 已确认的合成片段",
+              "state": "footage",
+              "seconds": 3.958,
+              "action": "",
+              "takes": 1,
+              "take": "t26ac4c64",
+              "frames": 95,
+              "take_seed": null,
+              "quality": "footage",
+              "footage": true
+            }
+          ],
+          "timeline": [
+            {
+              "item": "i1115403f",
+              "clip": "ccdf83a94",
+              "name": "Agent 已确认的合成片段",
+              "start": 0,
+              "end": 95,
+              "at": "00:00:00",
+              "in": 0,
+              "out": 95
+            }
+          ],
+          "gaps": [],
+          "notes": [],
+          "rendering": []
+        }
+      },
+      "replay_rejected": true
+    },
+    {
+      "name": "concurrent_revision",
+      "stale_proposal_rejected": true
+    },
+    {
+      "name": "generation_preview",
+      "revision": 7,
+      "approval_required": true,
+      "proposal": {
+        "id": "YfGcSaMp28cwfUxWNZWJ_4TE-rue33qa",
+        "action": "provider_submit",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 7,
+          "clip": "ccdf83a94",
+          "provider": "simulation",
+          "model": "simulation",
+          "resolution": "test",
+          "seconds": 4,
+          "prompt": "合成纸船，无外部调用",
+          "mode": "text",
+          "references": [],
+          "reference_disclosure": [],
+          "approved_quote_cents": 0
+        },
+        "expires": 1794966942.9142947,
+        "approved": false,
+        "requested_by": "agent",
+        "cost_notice": "Simulation only: no video and no charge.",
+        "estimate_cents": 0,
+        "simulated": true
+      }
+    },
+    {
+      "name": "generation_execute",
+      "result": {
+        "id": "992c9fa98eec44338f5447e1d75673c4",
+        "provider": "simulation",
+        "model": "simulation",
+        "resolution": "test",
+        "seconds": 4,
+        "project": "H3_综合验收_20261118",
+        "clip": "ccdf83a94",
+        "mode": "text",
+        "reference_count": 0,
+        "ratio": "16:9",
+        "state": "queued",
+        "created": 1794966694.3432329,
+        "updated": 1794966694.346476,
+        "reserved_cents": 0,
+        "simulated": true,
+        "has_output": false,
+        "staged": false,
+        "notice": ""
+      },
+      "replay_rejected": true
+    },
+    {
+      "name": "cancel_preview",
+      "revision": 7,
+      "approval_required": true,
+      "proposal": {
+        "id": "Ary_9h5PYoiT58Iyjcy0VYgbNqC6JW-1",
+        "action": "provider_cancel",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 7,
+          "job": "992c9fa98eec44338f5447e1d75673c4"
+        },
+        "expires": 1794966994.848436,
+        "approved": false,
+        "requested_by": "agent",
+        "notice": "Review in the local editor. History restore cannot undo external charges or disclosure."
+      }
+    },
+    {
+      "name": "cancel_execute",
+      "result": {
+        "id": "992c9fa98eec44338f5447e1d75673c4",
+        "provider": "simulation",
+        "model": "simulation",
+        "resolution": "test",
+        "seconds": 4,
+        "project": "H3_综合验收_20261118",
+        "clip": "ccdf83a94",
+        "mode": "text",
+        "reference_count": 0,
+        "ratio": "16:9",
+        "state": "cancelled",
+        "created": 1794966694.3432329,
+        "updated": 1794966728.9567075,
+        "reserved_cents": 0,
+        "simulated": true,
+        "has_output": false,
+        "staged": false,
+        "notice": ""
+      },
+      "replay_rejected": true
+    },
+    {
+      "name": "restore_preview",
+      "revision": 7,
+      "approval_required": true,
+      "proposal": {
+        "id": "sV2szLwYfZj1fCPtLDImuM6SveiT8cEW",
+        "action": "restore",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 7,
+          "target_revision": 6
+        },
+        "expires": 1794967056.7289634,
+        "approved": false,
+        "requested_by": "agent",
+        "notice": "Review in the local editor. History restore cannot undo external charges or disclosure."
+      }
+    },
+    {
+      "name": "restore_execute",
+      "result": {
+        "revision": 8,
+        "summary": {
+          "sounds": [
+            {
+              "sound": "s932c50e0",
+              "name": "偏移半秒的测试音轨",
+              "lane": 0,
+              "start": 12,
+              "end": 96,
+              "at": "00:00:12",
+              "offset": 0.0,
+              "gain": 0.5
+            }
+          ],
+          "effects": [],
+          "name": "H3_综合验收_20261118",
+          "revision": 8,
+          "style": "Live-action, cinematic",
+          "format": "16:9",
+          "language": "English",
+          "profile": "h3",
+          "sizes": {
+            "draft": {
+              "width": 640,
+              "height": 352,
+              "name": "small"
+            },
+            "final": {
+              "width": 640,
+              "height": 352,
+              "name": "small"
+            }
+          },
+          "checkpoints": [],
+          "loras": [],
+          "patches": [],
+          "frames": 95,
+          "length": "00:03:23",
+          "fps": 24,
+          "cast": [],
+          "bins": [],
+          "clips": [
+            {
+              "id": "ccdf83a94",
+              "name": "合成测试片段",
+              "state": "footage",
+              "seconds": 3.958,
+              "action": "",
+              "takes": 1,
+              "take": "t26ac4c64",
+              "frames": 95,
+              "take_seed": null,
+              "quality": "footage",
+              "footage": true
+            }
+          ],
+          "timeline": [
+            {
+              "item": "i1115403f",
+              "clip": "ccdf83a94",
+              "name": "合成测试片段",
+              "start": 0,
+              "end": 95,
+              "at": "00:00:00",
+              "in": 0,
+              "out": 95
+            }
+          ],
+          "gaps": [],
+          "notes": [],
+          "rendering": []
+        }
+      },
+      "replay_rejected": true
+    },
+    {
+      "name": "export_preview",
+      "revision": 8,
+      "approval_required": true,
+      "proposal": {
+        "id": "7zDu9UK2klsCT1tgkeS2kPvthcxqM_ni",
+        "action": "export",
+        "payload": {
+          "project": "H3_综合验收_20261118",
+          "revision": 8
+        },
+        "expires": 1794967106.6185842,
+        "approved": false,
+        "requested_by": "agent",
+        "notice": "Review in the local editor. History restore cannot undo external charges or disclosure."
+      }
+    },
+    {
+      "name": "export_execute",
+      "result": {
+        "filename": "H3_综合验收_20261118_001.mp4",
+        "subfolder": "h3take_projects/H3_综合验收_20261118/exports",
+        "bytes": 586892,
+        "plan": {
+          "width": 640,
+          "height": 352,
+          "frames": 95,
+          "seconds": 3.96,
+          "clips": 1,
+          "drafts": 0,
+          "missing": 0,
+          "gaps": 0,
+          "effects": 0,
+          "effects_missing": 0,
+          "effects_stale": 0
+        }
+      },
+      "replay_rejected": true
+    },
+    {
+      "name": "concurrent_actual_clients",
+      "two_stdio_clients": true,
+      "before_revision": 9,
+      "after_revision": 10,
+      "outcomes": [
+        {
+          "revision": 10,
+          "summary": {
+            "sounds": [
+              {
+                "sound": "s932c50e0",
+                "name": "偏移半秒的测试音轨",
+                "lane": 0,
+                "start": 12,
+                "end": 96,
+                "at": "00:00:12",
+                "offset": 0.0,
+                "gain": 0.5
+              }
+            ],
+            "effects": [],
+            "name": "H3_综合验收_20261118",
+            "revision": 10,
+            "style": "Live-action, cinematic",
+            "format": "16:9",
+            "language": "English",
+            "profile": "h3",
+            "sizes": {
+              "draft": {
+                "width": 640,
+                "height": 352,
+                "name": "small"
+              },
+              "final": {
+                "width": 640,
+                "height": 352,
+                "name": "small"
+              }
+            },
+            "checkpoints": [],
+            "loras": [],
+            "patches": [],
+            "frames": 95,
+            "length": "00:03:23",
+            "fps": 24,
+            "cast": [],
+            "bins": [],
+            "clips": [
+              {
+                "id": "ccdf83a94",
+                "name": "清晨片段",
+                "state": "footage",
+                "seconds": 3.958,
+                "action": "",
+                "takes": 1,
+                "take": "t26ac4c64",
+                "frames": 95,
+                "take_seed": null,
+                "quality": "footage",
+                "footage": true
+              }
+            ],
+            "timeline": [
+              {
+                "item": "i1115403f",
+                "clip": "ccdf83a94",
+                "name": "清晨片段",
+                "start": 0,
+                "end": 95,
+                "at": "00:00:00",
+                "in": 0,
+                "out": 95
+              }
+            ],
+            "gaps": [],
+            "notes": [],
+            "rendering": []
+          }
+        },
+        {
+          "error": true,
+          "detail": "editor refused the call (HTTP 409); check permissions, approval and revision"
+        }
+      ],
+      "passed": true
+    }
+  ]
+}

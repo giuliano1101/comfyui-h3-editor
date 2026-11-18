@@ -570,7 +570,7 @@ def profile_status(available):
 
 def slug(name):
     """A safe folder name. Refuses anything that would leave the projects folder."""
-    cleaned = re.sub(r"[^A-Za-z0-9 _-]", "", str(name or "")).strip().replace(" ", "_")
+    cleaned = re.sub(r"[^A-Za-z0-9\u3400-\u9fff _-]", "", str(name or "")).strip().replace(" ", "_")
     if not cleaned:
         raise ValueError("a project needs a name with letters or numbers")
     return cleaned[:64]
@@ -1204,7 +1204,7 @@ def scaled(side, scale):
 
 
 def export_command(project, paths, out_path, width=None, height=None, scale=1.0, quality="high", sound_paths=None,
-                   effect_paths=None):
+                   effect_paths=None, subtitle_path=None):
     """ffmpeg arguments that join the timeline's rendered clips. Gaps become black and silence.
 
     paths maps a clip id to the file of its active take. Clips with no render
@@ -1318,6 +1318,13 @@ def export_command(project, paths, out_path, width=None, height=None, scale=1.0,
         video = "o%s" % number
         laid += 1
 
+    if subtitle_path:
+        try:
+            from .captions import filter_path
+        except ImportError:
+            from captions import filter_path
+        chains.append("[%s]ass=filename='%s'[subtitled]" % (video, filter_path(subtitle_path)))
+        video = "subtitled"
     args += ["-filter_complex", ";".join(chains), "-map", "[%s]" % video, "-map", "[%s]" % audio,
              "-c:v", "libx264", "-crf", str(EXPORT_QUALITY[quality]), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
              "-movflags", "+faststart", out_path]
@@ -1379,6 +1386,8 @@ def slice_project(project, first, last):
         if new["frames"] >= 1:
             effects.append(new)
     out["effects"] = effects
+    out["subtitles"] = [dict(c, start=max(first,c['start'])-first, end=min(last,c['end'])-first)
+                        for c in project.get('subtitles',[]) if c['end']>first and c['start']<last]
     return out
 
 
@@ -3470,6 +3479,13 @@ def apply_op(project, op, names):
         effect_id = _resolve(op.get("effect"), names, "effect")
         remove_effect(project, effect_id)
         result = {"effect": effect_id}
+    elif kind in ("add_subtitle", "update_subtitle", "remove_subtitle"):
+        if 'subtitle' in op: op = dict(op, subtitle=_resolve(op['subtitle'], names, 'subtitle'))
+        try:
+            from . import captions
+        except ImportError:
+            import captions
+        result = captions.apply(project, op)
     else:
         raise ValueError("unknown op %s" % kind)
     if op.get("as"):

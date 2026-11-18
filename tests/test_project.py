@@ -79,6 +79,14 @@ class ProjectTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             slug("../..")
 
+    def test_chinese_project_folders_preserve_names_without_path_characters(self):
+        self.assertEqual(slug("中文 场景 01"), "中文_场景_01")
+        self.assertEqual(slug("../../中文场景:C:\\剪辑"), "中文场景C剪辑")
+        self.assertEqual(slug("镜头" * 40), "镜头" * 32)
+        for invalid in ("../..", "\\/:*?", "。！"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                slug(invalid)
+
     def test_lengths_snap_to_the_h3_grid(self):
         self.assertEqual(snap_frames(5), 124)
         self.assertEqual((snap_frames(3.3) - 5) % 17, 0)

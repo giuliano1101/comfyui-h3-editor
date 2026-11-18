@@ -21,7 +21,7 @@
   scrollbar-color: var(--line) transparent;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; background: var(--room); color: var(--text); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+html, body { height: 100%; margin: 0; background: var(--room); color: var(--text); font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
 ::selection { background: rgba(224, 162, 74, 0.38); color: var(--text); }
 input, textarea { caret-color: var(--tungsten); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }

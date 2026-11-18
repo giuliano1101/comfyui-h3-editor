@@ -1,0 +1,16 @@
+{
+  "method": "CUA + real local Qwen3-4B CPU + same bridge approval",
+  "input": "把合成测试片段改名为纸船片段",
+  "correction": "不是纸船片段，改名为清晨片段",
+  "cancel": "cancelled the corrected draft without applying",
+  "final_input": "把合成测试片段改名为清晨片段",
+  "before_revision": 8,
+  "after_revision": 9,
+  "name": "清晨片段",
+  "screenshot_evidence": [
+    "../screenshots/chat-preview.jpg",
+    "../screenshots/chat-correction.jpg",
+    "../screenshots/chat-applied.jpg"
+  ],
+  "passed": true
+}

@@ -1,0 +1,127 @@
+[
+  {
+    "path": "20261118/actual-chat.json",
+    "bytes": 556,
+    "sha256": "c54f9e560dbb3cf32f8909d3ee7e552e8b29317ad4cb62a185f7700821bb4846"
+  },
+  {
+    "path": "20261118/actual-composition.json",
+    "bytes": 1494,
+    "sha256": "1355b45299882d42a9f102cd9c6869f3c266b741e5193dd8e193637b1521f99b"
+  },
+  {
+    "path": "20261118/actual-editor.json",
+    "bytes": 3285,
+    "sha256": "f581c1b63d4349c12312f8fd1fe9ad20b7ffd20854bf734d068dedb6c87bd494"
+  },
+  {
+    "path": "20261118/actual-mcp.json",
+    "bytes": 12673,
+    "sha256": "2439a7c7c15d9c53578fb4db293c808e48e5a5065a7ac829a3b9393a6db4ab33"
+  },
+  {
+    "path": "20261118/actual-speech-safety.json",
+    "bytes": 1575,
+    "sha256": "2c94c1edb41571c2bf56dcea851d09d143cd384d850c571875cba8d38a78ba15"
+  },
+  {
+    "path": "20261118/composition-frame.png",
+    "bytes": 71397,
+    "sha256": "530908f566ada95c90f06509ab4aed2f1fb0a8815cf652d6e1eed0ab9c1715d2"
+  },
+  {
+    "path": "20261118/composition-synthetic.mp4",
+    "bytes": 590045,
+    "sha256": "caa006c6442864375da6c847a36a05d750056eb07bb3ec2d99efc50d256ed01b"
+  },
+  {
+    "path": "20261118/dependency-licenses.json",
+    "bytes": 6880,
+    "sha256": "9a7422e43e529872cef83087c33a874fc5739f5a45412e53eb531adf9a14821c"
+  },
+  {
+    "path": "20261118/export-frame.png",
+    "bytes": 57130,
+    "sha256": "9ab73050ba786eb0bf0c6028899aa3b874f36a6af7220b31819dcab5cf1b4d7c"
+  },
+  {
+    "path": "20261118/final-deployment-smoke.json",
+    "bytes": 2591,
+    "sha256": "c8bcc19ca558432a3868479c94b8580f6a41d993dbb72174bc4f51377ab18e70"
+  },
+  {
+    "path": "20261118/gpu.json",
+    "bytes": 1213,
+    "sha256": "9862c6d3a8e80343f0cb449c35e879d5ac7e3128f525af7248c04c3aa26a01a3"
+  },
+  {
+    "path": "20261118/intent-actual.json",
+    "bytes": 1314,
+    "sha256": "10dbae9ae5bf57f862834b12dab663d6ab8ce357886e03288460e27a59e795e9"
+  },
+  {
+    "path": "20261118/jev-accounting.json",
+    "bytes": 167,
+    "sha256": "e1a68091869b54aa947cde939ee8a4cc48669250c11c8dc9fdbd88580ae3001a"
+  },
+  {
+    "path": "20261118/mapped-loading.json",
+    "bytes": 165,
+    "sha256": "3266a8ff3ca4b17f0c7d396c240fe6f4be4a0f90b8ee40f41b3353b2539961fd"
+  },
+  {
+    "path": "20261118/production-preservation.json",
+    "bytes": 293,
+    "sha256": "0ab3c7d3ff97a1ae67ebbc087b8753e202891d4a783873de36cbf40cdc9369fb"
+  },
+  {
+    "path": "20261118/speech-base-runtime.json",
+    "bytes": 742,
+    "sha256": "78a3bf4666db721e59d7c74cf6d0a57528a7791ece141af6b3401bba52a9e62c"
+  },
+  {
+    "path": "20261118/speech-runtime.json",
+    "bytes": 741,
+    "sha256": "411cc67a42329924e6a75af5add63b714a61e4a44e6345c2a4736b40b76ce83a"
+  },
+  {
+    "path": "20261118/staged-secret-check.json",
+    "bytes": 233,
+    "sha256": "3a0df1233930cc40562c83d0b7ffcd039bb018c1e7601e93a74d0c20bcdec5eb"
+  },
+  {
+    "path": "20261118/startup-summary.txt",
+    "bytes": 423,
+    "sha256": "fcac5dbca6f77c6b235fbd213a23dafd3864f6c8391c8bd1e6a20bb4f55bc743"
+  },
+  {
+    "path": "screenshots/chat-applied.jpg",
+    "bytes": 120173,
+    "sha256": "e426a14df41a758d099e4ff77759b7cc002c7932c6e798d15d56e4714011994a"
+  },
+  {
+    "path": "screenshots/chat-correction.jpg",
+    "bytes": 77377,
+    "sha256": "6ab312c1b604cc56be404ea75fb1039d75021c211a8d06bd3ec84e5bea1b9637"
+  },
+  {
+    "path": "screenshots/chat-preview.jpg",
+    "bytes": 78629,
+    "sha256": "905ed698c6cb0ad7a26b50116e442ea04a88e80e008f7354ac2b240014ad2310"
+  },
+  {
+    "path": "screenshots/concurrent-approved.jpg",
+    "bytes": 109452,
+    "sha256": "b55a0af238ed15789925fd286bb13d6b9cd10011052b63b507950aa8525b20fb"
+  },
+  {
+    "path": "screenshots/editing-tools.jpg",
+    "bytes": 101179,
+    "sha256": "34f0cd6398d1fcb8e902f72fa9ac58b1eff24ac9b2931d4d4776a2822f7c34f9"
+  },
+  {
+    "path": "screenshots/subtitles-edit.jpg",
+    "bytes": 101068,
+    "sha256": "d62544e611435a10bb021924b32e248671bbd54a1b37f6ae781178b8eaebb0a8"
+  }
+]

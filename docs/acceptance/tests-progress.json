@@ -1,0 +1,11 @@
+{
+  "total": 587,
+  "passed": 586,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 1,
+  "skip_reasons": [
+    "ComfyUI's mapped loading is not set up outside a running ComfyUI: comfy-aimdo is not initialized"
+  ],
+  "python": "3.13.14"
+}

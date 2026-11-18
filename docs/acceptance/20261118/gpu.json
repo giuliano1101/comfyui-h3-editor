@@ -1,0 +1,47 @@
+{
+  "project": "H3_GPU_\u9a8c\u6536_20261118_091513",
+  "clip": "cf58a40b0",
+  "profile": "h3",
+  "size": [
+    256,
+    256
+  ],
+  "gpu": "second RTX 3090, 24 GB",
+  "timeout_seconds": 900,
+  "paid_api": false,
+  "state": "cancelled_for_memory_pressure",
+  "job": {
+    "clip": "cf58a40b0",
+    "take": "t2d6bbb40",
+    "quality": "draft",
+    "seed": 20261118,
+    "saved": {
+      "action": "A small red paper boat floats slowly across a still pond in soft daylight. Static camera. Natural water sounds. No speech.",
+      "camera": "",
+      "speaker": "",
+      "dialogue": "",
+      "sound": "",
+      "music": "",
+      "seconds": 2.0,
+      "cast": null,
+      "track": null
+    },
+    "models": {
+      "unet": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "checkpoint": "ref2va",
+      "text_encoder": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "vae": "minimax_h3_video_vae_int8_convrot.safetensors",
+      "profile": "h3",
+      "profile_title": "MiniMax H3",
+      "steps": 10,
+      "sampler": "res_multistep"
+    },
+    "size": [
+      256,
+      256
+    ],
+    "id": "8113d10e-13b0-47ed-997d-0c12e6deaef6"
+  },
+  "minimum_available_ram_mb": 3479,
+  "elapsed_seconds": 57.6
+}
